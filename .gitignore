@@ -114,5 +114,5 @@ dmypy.json
 .pyre/
 
 .idea
-.idea/
+.idea/s
 .idea/*

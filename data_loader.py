@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 # importing PIL
 import PIL
 from PIL import Image
+from data_utils import load_audio, splitsongs, hello_world2
 
 
 GENRES = {'metal': 0, 'disco': 1, 'classical': 2, 'rock': 3, 'jazz': 4, 
