@@ -128,10 +128,10 @@ def read_data(src_dir, genres, test_data_percentage=0.1, sample_rate=22050, dura
     ## TODO: map this to TF DataSet process
     
     print("Loading and Preprocessing Testing data......")
-    X_test, y_test = split_convert(X_test, y_test, sample_rate=sample_rate, duration=duration, max_signal_len=max_signal_len)
+    X_test, y_test = split_convert(X_test, y_test, sample_rate=sample_rate, duration=duration, max_signal_len=max_signal_len, split_window=split_window, split_overlap=split_overlap)
 
     print("Loading and Preprocessing Training data......")
-    X_train, y_train = split_convert(X_train, y_train, sample_rate=sample_rate, duration=duration, max_signal_len=max_signal_len)
+    X_train, y_train = split_convert(X_train, y_train, sample_rate=sample_rate, duration=duration, max_signal_len=max_signal_len, split_window=split_window, split_overlap=split_overlap)
 
     # return X_test, y_test
     return X_train, y_train, X_test, y_test
