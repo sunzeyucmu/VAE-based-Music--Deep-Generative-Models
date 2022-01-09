@@ -4,6 +4,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from encdec import Encoder, Decoder, print_dec_layer
 from VectorQuantizer import VectorQuantizer
+from data_utils import STFT_ARGS, spectral, norm
 
 """
  Single Level VQ-VAE
@@ -51,6 +52,8 @@ class VQVAE(keras.models.Model):
             name="reconstruction_loss"
         )
         self.vq_loss_tracker = keras.metrics.Mean(name="vq_loss")
+        self.spectral_loss_tracker = keras.metrics.Mean(name='spectral_loss')
+
         self.loss_fn = keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
 
     @property
@@ -59,6 +62,7 @@ class VQVAE(keras.models.Model):
             self.total_loss_tracker,
             self.reconstruction_loss_tracker,
             self.vq_loss_tracker,
+            self.spectral_loss_tracker,
         ]
 
     """
@@ -67,6 +71,7 @@ class VQVAE(keras.models.Model):
 
     # @tf.function
     def train_step(self, data):
+        # print("Step Training....")
         x = data[0]
         with tf.GradientTape() as tape:
             # Outputs from the VQ-VAE.
@@ -77,8 +82,10 @@ class VQVAE(keras.models.Model):
             #     tf.reduce_mean((x - reconstructions) ** 2) / self.train_variance
             # )
             reconstruction_loss = tf.reduce_mean(self.loss_fn(x, reconstructions))
+            # Spectral Loss
+            spectral_loss = tf.reduce_mean(self._multispectral_loss(x, reconstructions))
 
-            total_loss = reconstruction_loss + sum(self.vqvae.losses)
+            total_loss = reconstruction_loss + sum(self.vqvae.losses) + spectral_loss
 
         # Backpropagation.
         grads = tape.gradient(total_loss, self.vqvae.trainable_variables)
@@ -88,11 +95,13 @@ class VQVAE(keras.models.Model):
         self.total_loss_tracker.update_state(total_loss)
         self.reconstruction_loss_tracker.update_state(reconstruction_loss)
         self.vq_loss_tracker.update_state(sum(self.vqvae.losses))
+        self.spectral_loss_tracker.update_state(spectral_loss)
 
         # Log results.
         ret_metrics = dict(loss=self.total_loss_tracker.result(),
                            reconstruction_loss=self.reconstruction_loss_tracker.result(),
-                           vqvae_loss=self.vq_loss_tracker.result())
+                           vqvae_loss=self.vq_loss_tracker.result(),
+                           spectral_loss=self.spectral_loss_tracker.result())
         ## VQ metrics
         vq_metrics = {m.name: m.result() for m in self.vq.metrics}
 
@@ -105,22 +114,77 @@ class VQVAE(keras.models.Model):
 
         return ret_metrics
 
+    def test_step(self, data):
+        x = data[0]
+        # Outputs from the VQ-VAE.
+        reconstructions = self.vqvae(x)
+
+        reconstruction_loss = tf.reduce_mean(self.loss_fn(x, reconstructions))
+        # Spectral Loss
+        spectral_loss = tf.reduce_mean(self._multispectral_loss(x, reconstructions))
+
+        total_loss = reconstruction_loss + sum(self.vqvae.losses) + spectral_loss
+
+        # Loss tracking.
+        self.total_loss_tracker.update_state(total_loss)
+        self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+        self.vq_loss_tracker.update_state(sum(self.vqvae.losses))
+        self.spectral_loss_tracker.update_state(spectral_loss)
+
+        # Log results.
+        ret_metrics = dict(loss=self.total_loss_tracker.result(),
+                           reconstruction_loss=self.reconstruction_loss_tracker.result(),
+                           vqvae_loss=self.vq_loss_tracker.result(),
+                           spectral_loss=self.spectral_loss_tracker.result())
+        ## VQ metrics
+        vq_metrics = {m.name: m.result() for m in self.vq.metrics}
+
+
+        ret_metrics.update(dict(
+            enc_place_holder=0.0,
+            **vq_metrics
+        ))
+
+        return ret_metrics
+
+
     '''
       For CallBack model call
     '''
-
     def call(self, x):
         return self.vqvae(x)
 
     def get_quantizer(self):
         return self.vq
 
+    def _multispectral_loss(self, target, recon, **kwargs):
+        losses = []
+        # shape = tf.shape(target)
+        # target_ = tf.reshape(target, [shape[0]])
+
+        for n_fft, hop_len, window_size in zip(*STFT_ARGS):
+            spec_tar = spectral(tf.squeeze(target), n_fft, hop_len, window_size)
+            spec_recon = spectral(tf.squeeze(recon), n_fft, hop_len, window_size)
+            # 1. complete spectral loss
+            # losses.append(norm(spec_tar - spec_recon))
+            # scale by bandwidth
+            losses.append(norm(spec_tar - spec_recon)/norm(spec_tar))
+
+        # return sum(losses) / len(losses)
+        # print("[DEBUG] Spectral Losses: ", losses)
+
+        losses = tf.stack(losses, axis=-1) # (N, S)
+        return tf.reduce_mean(losses, axis=-1)
+
+
 
 if __name__ == '__main__':
     print('VQ-VAE module')
     sample_batch = tf.random.uniform([32, 28000, 1])
+    sample_y = tf.random.uniform([32, ])
     
-    vqvae_trainer = VQVAE(sample_batch.shape[1:], latent_dim=64, num_embeddings=512, depth=2, down_depth=[5, 3], strides=[2, 2], dilation_factor=3)  # codebook size
+    # vqvae_trainer = VQVAE(sample_batch.shape[1:], latent_dim=64, num_embeddings=512, depth=2, down_depth=[5, 3], strides=[2, 2], dilation_factor=3)  # codebook size
+    vqvae_trainer = VQVAE(sample_batch.shape[1:], latent_dim=64, num_embeddings=512, depth=1, down_depth=[5], strides=[2], dilation_factor=3)
     vqvae_trainer.compile(optimizer=keras.optimizers.Adam())
 
     vqvae_trainer.vqvae.summary()
@@ -129,5 +193,7 @@ if __name__ == '__main__':
 
     vqvae_trainer.decoder.model.summary()
 
-    print_dec_layer(vqvae_trainer.decoder)
+    # print_dec_layer(vqvae_trainer.decoder)
 
+    # Validate train_step
+    vqvae_trainer.fit(x=sample_batch, y=sample_y, batch_size=8, epochs=4)

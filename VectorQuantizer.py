@@ -18,27 +18,51 @@ class VectorQuantizer(layers.Layer):
         # Initialize the embeddings which we will quantize.
         w_init = tf.random_uniform_initializer()
         ## Latent Embedding Space: K x D/L
+        # self.embeddings = tf.Variable(
+        #     initial_value=w_init(
+        #         shape=(self.embedding_dim, self.num_embeddings), dtype="float32"
+        #     ),
+        #     trainable=True,
+        #     name="embeddings_vqvae",
+        # ) # The Model Weights
+
+
+        # EMA for codebook update; replacement for codebook loss
+        self.gamma = decay_rate
         self.embeddings = tf.Variable(
             initial_value=w_init(
                 shape=(self.embedding_dim, self.num_embeddings), dtype="float32"
             ),
-            trainable=True,
+            trainable=False,
             name="embeddings_vqvae",
-        ) # The Model Weights
+        ) # Non-trainable Model Weights@
 
-
-        # EMA for codebook update; replacement for codebook loss
-
+        # (L, K): running sum of encoder_outputs (ez) clustered around each codebook vector
+        # self.m_t = self.embeddings
+        self.m_t = tf.Variable(
+            initial_value=self.embeddings,
+            trainable=False,
+        )
         ## Record Embedding Usage
-        self.N_t = tf.zeros([num_embeddings,], dtype=tf.float32)
-
+        # self.N_t = tf.zeros([num_embeddings,], dtype=tf.float32) # (K, ): usage count of codebook vectors
+        # (K, ): usage count of codebook vectors
+        # $ equal start for all codebook vectors
+        # self.N_t = tf.ones([num_embeddings, ], dtype=tf.float32)
+        self.N_t = tf.Variable(
+            initial_value=tf.ones([num_embeddings, ], dtype=tf.float32),
+            trainable=False,
+        )
         ## Metrics
+        self.batch_usage_tracker = keras.metrics.Mean(name="batch_codebook_usage")
         self.usage_tracker = keras.metrics.Mean(name="codebook_usage")
+        self.entropy_tracker = keras.metrics.Mean(name="codebook_entropy")
 
     @property
     def metrics(self):
         return [
+            self.batch_usage_tracker,
             self.usage_tracker,
+            self.entropy_tracker
         ]
 
     def call(self, x, debug=False):
@@ -65,8 +89,14 @@ class VectorQuantizer(layers.Layer):
         commitment_loss = self.beta * tf.reduce_mean(
             (tf.stop_gradient(quantized) - x) ** 2
         )
-        codebook_loss = tf.reduce_mean((quantized - tf.stop_gradient(x)) ** 2)
-        self.add_loss(commitment_loss + codebook_loss)
+        # EMA, replacement for codebook loss
+        # codebook_loss = tf.reduce_mean((quantized - tf.stop_gradient(x)) ** 2)
+        # self.add_loss(commitment_loss + codebook_loss)
+        '''
+        This property is reset at the start of every __call__() to the top-level layer, 
+        so that layer.losses always contains the loss values created during the last forward pass.
+        '''
+        self.add_loss(commitment_loss)
 
         '''
         Straight-through estimator： 
@@ -76,18 +106,51 @@ class VectorQuantizer(layers.Layer):
         quantized = x + tf.stop_gradient(quantized - x)
 
         ## EMA (Exponential Moving Average) calculation
-        self.N_t = tf.reduce_sum(encodings, axis=0) # (K, )
+        '''
+        [L, NT] x [NT, K] -> [L, K]: for each col (1/k codebook embedding ek), sum up all encoder outputs (zk,1, ... zk,nk)
+        which are closest to ek; for new centre computation. (e.g. K-Means....)
+        '''
+        m_t_ = tf.matmul(flattened, encodings, transpose_a=True) # m_(t)
+        N_t_ = tf.reduce_sum(encodings, axis=0) # (K, ): N_(t)
 
+        # moving average of mi(t)
+        # self.m_t = self.gamma * self.m_t + (1. - self.gamma) * m_t_
+        self.m_t.assign(self.gamma * self.m_t + (1. - self.gamma) * m_t_)
+        # moving average of Ni(t)
+        # self.N_t = self.gamma * self.N_t + (1. - self.gamma) * N_t_  # k_bins
+        self.N_t.assign(self.gamma * self.N_t + (1. - self.gamma) * N_t_)
+
+        usage = tf.reshape(tf.cast(self.N_t >= self.codebook_usage_threshold, dtype=tf.float32), [1, self.num_embeddings])
+        # TODO: assume NT > K here...
+        random_codes = tf.transpose(tf.random.shuffle(flattened)[:self.num_embeddings]) # (L, K)
+        reset_codes = (1.0 - usage) * random_codes
+        # TODO: re-randomize below threshold vectors to current encoder output
+
+        # !NAN prevention: running count could go zero... clip it
+        # self.N_t.assign(tf.clip_by_value(self.N_t, 1e-8, 1e+8))
+        # self.embeddings.assign(self.m_t / tf.reshape(tf.clip_by_value(self.N_t, 1e-8, 1e+8), [1, self.num_embeddings]))
+        self.embeddings.assign(usage * (self.m_t / tf.reshape(tf.clip_by_value(self.N_t, 1e-8, 1e+8), [1, self.num_embeddings]))
+                               + reset_codes)
+
+        # self.N_t = tf.reduce_sum(encodings, axis=0) # (K, )
 
         ## METRCIS Tracking
+        # usage for current batch
+        cur_codebook_usage = tf.reduce_sum(tf.cast(N_t_ >= self.codebook_usage_threshold, dtype=tf.float32))
+        # running average usage monitoring (Codebook Collapse...)
         codebook_usage = tf.reduce_sum(tf.cast(self.N_t >= self.codebook_usage_threshold, dtype=tf.float32))
+        self.batch_usage_tracker.update_state(cur_codebook_usage)
         self.usage_tracker.update_state(codebook_usage)
+        # Entropy (Codebook vector diversity)
+        code_prob = N_t_ / tf.reduce_sum(N_t_)
+        code_entropy = -tf.reduce_sum(code_prob * tf.math.log(code_prob + 1e-8))
+        self.entropy_tracker.update_state(code_entropy)
 
         ## DEBUG
         if debug:
           print("VQ input (Encoder Output): ", x)
           print("VQ output: ", quantized)
-        return quantized , encoding_indices
+        return quantized, encoding_indices
 
     '''
     Output shape: (N, )
@@ -122,8 +185,13 @@ if __name__ == '__main__':
     # should be treated as $$model width
     VQ = VectorQuantizer(num_embeddings=6, embedding_dim=latent_dim)
     print(VQ.get_usage_count())
+    print(VQ.m_t)
+    print("Initial CodeBook: ", VQ.embeddings)
     test_VQ_out, test_latent_idx = VQ(tf.random.normal([32, 100, latent_dim]))
-    print(VQ.metrics[0].result())
+    print("N_t: ", VQ.get_usage_count())
+    print("m_t: ", VQ.m_t)
+    print("Updated embeddings (e_t): ", VQ.embeddings)
+    print("Metrics: ", {m.name:m.result() for m in VQ.metrics})
 
     # Trainable Variables
-    print(VQ.trainable_variables) # Embeddings
+    print("Trainable Variables: ", VQ.trainable_variables) # Embeddings

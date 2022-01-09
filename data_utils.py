@@ -2,9 +2,34 @@ import os
 import sys
 import numpy as np
 import librosa
+import tensorflow as tf
 from sklearn.model_selection import train_test_split
 
 # __all__ = ['hello_world']
+
+# TODO: hyper-parm this...
+STFT_ARGS = [(2048,1024,512), # n_fft
+             (240, 120, 50), # hop_length
+             (1200, 600, 240) # window_size
+            ]
+
+
+def spectral(x, n_fft, hop_length, window_length):
+    # (N, F, T)
+    # print("[DEBUG] X shape: {}".format(tf.shape(x)))
+    raw_stft = tf.signal.stft(x, frame_length=window_length, frame_step=hop_length, fft_length=n_fft)
+    # complex to float
+    return tf.math.abs(raw_stft)
+
+
+def norm(x):
+    # [N, F, f] -> [N, Ff] -> [N]
+    # n = tf.sqrt(tf.reduce_sum(tf.reshape(x, [tf.shape(x)[0], -1]) ** 2, axis=-1))
+    # print("[DEBUG] STFT: \n", x)
+    # TODO: 1. abs? 2: scale down the value (by bandwidth?)
+    n = tf.norm(x, ord='fro', axis=[-2, -1])
+    # return tf.cast(n, dtype=tf.float32)
+    return n
 
 
 def load_audio(file, sr=22050, offset=0.0, duration=None, mono=False):
@@ -13,6 +38,7 @@ def load_audio(file, sr=22050, offset=0.0, duration=None, mono=False):
     if len(x.shape) == 1:
         x = x.reshape((1, -1))
     return x    
+
 
 def hello_world():
 	print("Hello world")
