@@ -5,7 +5,13 @@ from tensorflow.keras import layers
 
 
 class VectorQuantizer(layers.Layer):
-    def __init__(self, num_embeddings, embedding_dim, beta=0.25, codebook_usage_threshold=1.0, decay_rate=0.99, **kwargs):
+    def __init__(self,
+                 num_embeddings,
+                 embedding_dim,
+                 beta=0.25,
+                 codebook_usage_threshold=1.0,
+                 decay_rate=0.99,
+                 level=0, **kwargs):
         super().__init__(**kwargs)
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
@@ -53,9 +59,9 @@ class VectorQuantizer(layers.Layer):
             trainable=False,
         )
         ## Metrics
-        self.batch_usage_tracker = keras.metrics.Mean(name="batch_codebook_usage")
-        self.usage_tracker = keras.metrics.Mean(name="codebook_usage")
-        self.entropy_tracker = keras.metrics.Mean(name="codebook_entropy")
+        self.batch_usage_tracker = keras.metrics.Mean(name="[{}]batch_codebook_usage".format(level))
+        self.usage_tracker = keras.metrics.Mean(name="[{}]codebook_usage".format(level))
+        self.entropy_tracker = keras.metrics.Mean(name="[{}]codebook_entropy".format(level))
 
     @property
     def metrics(self):
@@ -122,7 +128,9 @@ class VectorQuantizer(layers.Layer):
 
         usage = tf.reshape(tf.cast(self.N_t >= self.codebook_usage_threshold, dtype=tf.float32), [1, self.num_embeddings])
         # TODO: assume NT > K here...
-        random_codes = tf.transpose(tf.random.shuffle(flattened)[:self.num_embeddings]) # (L, K)
+        # random_codes = tf.transpose(tf.random.shuffle(flattened)[:self.num_embeddings]) # (L, K)
+        ## Tile X first incase NT < K
+        random_codes = tf.transpose(tf.random.shuffle(self._tile(flattened))[:self.num_embeddings])  # (L, K)
         reset_codes = (1.0 - usage) * random_codes
         # TODO: re-randomize below threshold vectors to current encoder output
 
@@ -176,6 +184,18 @@ class VectorQuantizer(layers.Layer):
     def get_usage_count(self):
         return self.N_t
 
+    def _tile(self, x):
+        # SafeGuard when NT < K
+        nt = tf.shape(x)[0]
+        ret = x
+        if nt < self.num_embeddings:
+            repeats = (self.num_embeddings + nt - 1) // nt
+            ret = tf.tile(x, [repeats, 1])
+
+        return ret
+
+
+
 
 if __name__ == '__main__':
     print('VQ module')
@@ -195,3 +215,6 @@ if __name__ == '__main__':
 
     # Trainable Variables
     print("Trainable Variables: ", VQ.trainable_variables) # Embeddings
+
+    # Test NT < K
+    # VQ1 = VectorQuantizer(num_embeddings=5000, embedding_dim=latent_dim)
