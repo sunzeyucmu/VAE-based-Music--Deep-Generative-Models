@@ -178,6 +178,31 @@ class VQVAE(keras.models.Model):
         # return self.vqvae(x)
         return self.vqvaes[0](x)
 
+    def decode_level(self, zq, level, chunk=1):
+        """
+
+        :param level:
+        :param zq: (N, T) T being the compressed length based on leveling
+        :param chunk: TODO: for sampling...
+        :return:
+        """
+        level_vq = self.vqs[level]
+        # (N, T, C)
+        quantized = tf.matmul(tf.one_hot(zq, level_vq.num_embeddings), level_vq.embeddings, transpose_b=True)
+        # (N, T_, 1)
+        x_recon = self.decoders[level](quantized, training=False)
+        return x_recon
+
+    def decode(self, zq, level=0):
+        """
+            Independent Decoder structure
+        :param level:
+        :param zq:
+        :return:
+        """
+        return self.decode_level(zq, level)
+
+
     def update_metrics(self, level_losses, recon_losses, commit_losses, spectral_losses):
         # Loss tracking.
         self.total_loss_tracker.update_state(sum(level_losses))

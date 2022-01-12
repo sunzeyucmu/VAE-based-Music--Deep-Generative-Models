@@ -26,8 +26,9 @@ class MHASelfAttentionBlock(layers.Layer):
     def __init__(self, d_model, num_heads, dff, rate=0.1):
         super(MHASelfAttentionBlock, self).__init__()
 
-        self.mha = layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model,
-                                             value_dim=d_model)  # key_dim == query_dim
+        # Note that 'key_dim/query_dim and value_dim' being size of each $attention head$ for query and key.
+        self.mha = layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads,
+                                             value_dim=d_model // num_heads)  # key_dim == query_dim
         self.ffn = point_wise_feed_forward_network(d_model, dff)
 
         self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
@@ -73,10 +74,13 @@ class MHABasedAutoregressiveModel(keras.Model):
                  **kwargs):
         super(MHABasedAutoregressiveModel, self).__init__(**kwargs)
 
-        self.context_length = context_length  # (T, )
+        self.context_length = tf.reduce_prod(context_length)  # (T, )
         self.bins = target_vocab_size
         self.d_model = width
         self.num_layers = depth
+
+        # Start Token
+        self.start_token = self.bins - 1 # TODO: temporary, for |zq| == 512, pass in 513
 
         # 1. Embedding map indices to d_model length embedding
         self.x_embedding = layers.Embedding(self.bins, self.d_model)
@@ -123,6 +127,53 @@ class MHABasedAutoregressiveModel(keras.Model):
         final_output = self.out(x)
 
         return final_output, attention_weights
+
+    @tf.function
+    def sample(self, n_samples, max_length=None, return_attention_weights=False):
+        if max_length is None:
+            max_length = self.context_length
+
+        start = tf.constant(self.start_token, dtype=tf.int64, shape=[n_samples,])
+
+        # `tf.TensorArray` is required here (instead of a python list) so that the
+        # dynamic-loop can be traced by `tf.function`.
+        output_array = tf.TensorArray(dtype=tf.int64, size=0, dynamic_size=True)
+        output_array = output_array.write(0, start)
+
+        for i in tf.range(max_length):
+            output = tf.transpose(output_array.stack()) # (N, i+1); when i==0, start_token at each position
+            # (N, i+1, D) raw logits; Note that we don't need to do full sequence inference... TODO: improvement
+            predictions, _ = self.call(output, training=False)
+
+            # select the last token from the seq_len dimension
+            predictions = predictions[:, -1:, :]  # (N, 1, D)
+
+            # Sampling 1: Greedy Search
+            ## TODO: others?
+            predicted_id = tf.argmax(predictions, axis=-1) # (N, 1)
+
+            # concatentate the predicted_id to the output which is given to the decoder
+            # as its input.
+            output_array = output_array.write(i + 1, tf.squeeze(predicted_id))
+
+            # if predicted_id == end:
+            #     break
+
+        #  output.shape (N, max_length+1)
+        output = tf.transpose(output_array.stack())
+
+
+        # `tf.function` prevents us from using the attention_weights that were
+        # calculated on the last iteration of the loop. So recalculate them outside
+        # the loop.
+        if return_attention_weights:
+            _, attention_weights = self.call(output[:, :-1], training=False)
+            return output, attention_weights
+
+        return output
+
+
+
 
 
 def loss_function(real, pred, loss_fn):
@@ -181,3 +232,14 @@ if __name__ == '__main__':
 
     for _, v in attn_w.items():
         print(v.numpy()[0][-1])
+
+    # Test Sampling
+    ## attention weights for the whole sampled batch
+    sampled_sequence, sample_attn_w = automha.sample(n_samples=3)
+
+    print(sampled_sequence.shape)
+    print(sampled_sequence)
+
+    for v, attn in sample_attn_w.items():
+        print(v)
+        print(attn[0][0]) # (One Head, one sampled

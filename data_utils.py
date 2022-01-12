@@ -7,6 +7,13 @@ from sklearn.model_selection import train_test_split
 
 # __all__ = ['hello_world']
 
+SAMPLE_RATE = 3000
+
+GENRES = {'metal': 0, 'disco': 1, 'classical': 2, 'rock': 3, 'jazz': 4,
+          'country': 5, 'pop': 6, 'blues': 7, 'reggae': 8, 'hiphop': 9}
+
+idx_to_genres = {v:k for (k, v) in GENRES.items()}
+
 # TODO: hyper-parm this...
 STFT_ARGS = [(2048,1024,512), # n_fft
              (240, 120, 50), # hop_length

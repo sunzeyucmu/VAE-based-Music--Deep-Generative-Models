@@ -22,7 +22,7 @@ class ResnetConv1DBlock(layers.Layer):
         #     layers.Conv1D(input_dim, 3, dilation_rate=1, padding="same")
         # ]
 
-    def call(self, input_tensor):
+    def call(self, input_tensor, **kwargs):
         # residual connection
         # return input_tensor + self.model(input_tensor)
         return layers.add([input_tensor, self.model(input_tensor)])
@@ -47,7 +47,7 @@ class DilatedResnet1D(layers.Layer):
             blocks = blocks[::-1]
         self.model = keras.Sequential(blocks)  # no need implicit unpacking
 
-    def call(self, input):
+    def call(self, input, **kwargs):
         return self.model(input)
 
 

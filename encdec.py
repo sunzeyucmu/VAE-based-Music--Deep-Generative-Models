@@ -37,7 +37,7 @@ class EncoderConvBlock(layers.Layer):
         # II: Proj Conv with kernel==3 to output channel size
         self.model.add(layers.Conv1D(output_dim, 3, strides=1, padding="same"))
 
-    def call(self, inputs):
+    def call(self, inputs, **kwargs):
         return self.model(inputs)
 
 
@@ -67,8 +67,9 @@ class DecoderConvBlock(layers.Layer):
             self.model.add(layers.Conv1DTranspose(output_dim if i == (down_depth - 1) else embed_width, self.kernel_size
                                                   , strides=stride, padding="same"))
 
-    def call(self, inputs):
+    def call(self, inputs, **kwargs):
         return self.model(inputs)
+
 
 class Encoder(layers.Layer):
     """
@@ -97,7 +98,7 @@ class Encoder(layers.Layer):
             # self.encoder_conv_blocks.append(encoder_conv_block(stride, down_sampling_depth))
             self.model.add(encoder_conv_block(stride, down_sampling_depth))
 
-    def call(self, inputs):
+    def call(self, inputs, **kwargs):
         # TODO: validate shape after down-sampling
         # x = inputs
 
@@ -146,7 +147,7 @@ class Decoder(layers.Layer):
         # The final Conv1D projects to the desired number of audio channels
         self.model.add(layers.Conv1D(output_dim, 3, strides=1, padding='same'))
 
-    def call(self, inputs):
+    def call(self, inputs, **kwargs):
         return self.model(inputs)
 
 

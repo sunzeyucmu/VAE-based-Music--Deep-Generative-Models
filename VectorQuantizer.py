@@ -71,7 +71,7 @@ class VectorQuantizer(layers.Layer):
             self.entropy_tracker
         ]
 
-    def call(self, x, debug=False):
+    def call(self, x, training=True, debug=False):
         # Calculate the input shape of the inputs and
         # then flatten the inputs keeping `embedding_dim` intact.
         # input x: 2D: (B, H, W, L); 1D: (B, T, L) -flatten-> (N, L)
@@ -111,48 +111,50 @@ class VectorQuantizer(layers.Layer):
         '''
         quantized = x + tf.stop_gradient(quantized - x)
 
-        ## EMA (Exponential Moving Average) calculation
-        '''
-        [L, NT] x [NT, K] -> [L, K]: for each col (1/k codebook embedding ek), sum up all encoder outputs (zk,1, ... zk,nk)
-        which are closest to ek; for new centre computation. (e.g. K-Means....)
-        '''
-        m_t_ = tf.matmul(flattened, encodings, transpose_a=True) # m_(t)
-        N_t_ = tf.reduce_sum(encodings, axis=0) # (K, ): N_(t)
+        if training:
 
-        # moving average of mi(t)
-        # self.m_t = self.gamma * self.m_t + (1. - self.gamma) * m_t_
-        self.m_t.assign(self.gamma * self.m_t + (1. - self.gamma) * m_t_)
-        # moving average of Ni(t)
-        # self.N_t = self.gamma * self.N_t + (1. - self.gamma) * N_t_  # k_bins
-        self.N_t.assign(self.gamma * self.N_t + (1. - self.gamma) * N_t_)
+            ## EMA (Exponential Moving Average) calculation
+            '''
+            [L, NT] x [NT, K] -> [L, K]: for each col (1/k codebook embedding ek), sum up all encoder outputs (zk,1, ... zk,nk)
+            which are closest to ek; for new centre computation. (e.g. K-Means....)
+            '''
+            m_t_ = tf.matmul(flattened, encodings, transpose_a=True) # m_(t)
+            N_t_ = tf.reduce_sum(encodings, axis=0) # (K, ): N_(t)
 
-        usage = tf.reshape(tf.cast(self.N_t >= self.codebook_usage_threshold, dtype=tf.float32), [1, self.num_embeddings])
-        # TODO: assume NT > K here...
-        # random_codes = tf.transpose(tf.random.shuffle(flattened)[:self.num_embeddings]) # (L, K)
-        ## Tile X first incase NT < K
-        random_codes = tf.transpose(tf.random.shuffle(self._tile(flattened))[:self.num_embeddings])  # (L, K)
-        reset_codes = (1.0 - usage) * random_codes
-        # TODO: re-randomize below threshold vectors to current encoder output
+            # moving average of mi(t)
+            # self.m_t = self.gamma * self.m_t + (1. - self.gamma) * m_t_
+            self.m_t.assign(self.gamma * self.m_t + (1. - self.gamma) * m_t_)
+            # moving average of Ni(t)
+            # self.N_t = self.gamma * self.N_t + (1. - self.gamma) * N_t_  # k_bins
+            self.N_t.assign(self.gamma * self.N_t + (1. - self.gamma) * N_t_)
 
-        # !NAN prevention: running count could go zero... clip it
-        # self.N_t.assign(tf.clip_by_value(self.N_t, 1e-8, 1e+8))
-        # self.embeddings.assign(self.m_t / tf.reshape(tf.clip_by_value(self.N_t, 1e-8, 1e+8), [1, self.num_embeddings]))
-        self.embeddings.assign(usage * (self.m_t / tf.reshape(tf.clip_by_value(self.N_t, 1e-8, 1e+8), [1, self.num_embeddings]))
-                               + reset_codes)
+            usage = tf.reshape(tf.cast(self.N_t >= self.codebook_usage_threshold, dtype=tf.float32), [1, self.num_embeddings])
+            # TODO: assume NT > K here...
+            # random_codes = tf.transpose(tf.random.shuffle(flattened)[:self.num_embeddings]) # (L, K)
+            ## Tile X first incase NT < K
+            random_codes = tf.transpose(tf.random.shuffle(self._tile(flattened))[:self.num_embeddings])  # (L, K)
+            reset_codes = (1.0 - usage) * random_codes
+            # TODO: re-randomize below threshold vectors to current encoder output
 
-        # self.N_t = tf.reduce_sum(encodings, axis=0) # (K, )
+            # !NAN prevention: running count could go zero... clip it
+            # self.N_t.assign(tf.clip_by_value(self.N_t, 1e-8, 1e+8))
+            # self.embeddings.assign(self.m_t / tf.reshape(tf.clip_by_value(self.N_t, 1e-8, 1e+8), [1, self.num_embeddings]))
+            self.embeddings.assign(usage * (self.m_t / tf.reshape(tf.clip_by_value(self.N_t, 1e-8, 1e+8), [1, self.num_embeddings]))
+                                   + reset_codes)
 
-        ## METRCIS Tracking
-        # usage for current batch
-        cur_codebook_usage = tf.reduce_sum(tf.cast(N_t_ >= self.codebook_usage_threshold, dtype=tf.float32))
-        # running average usage monitoring (Codebook Collapse...)
-        codebook_usage = tf.reduce_sum(tf.cast(self.N_t >= self.codebook_usage_threshold, dtype=tf.float32))
-        self.batch_usage_tracker.update_state(cur_codebook_usage)
-        self.usage_tracker.update_state(codebook_usage)
-        # Entropy (Codebook vector diversity)
-        code_prob = N_t_ / tf.reduce_sum(N_t_)
-        code_entropy = -tf.reduce_sum(code_prob * tf.math.log(code_prob + 1e-8))
-        self.entropy_tracker.update_state(code_entropy)
+            # self.N_t = tf.reduce_sum(encodings, axis=0) # (K, )
+
+            ## METRCIS Tracking
+            # usage for current batch
+            cur_codebook_usage = tf.reduce_sum(tf.cast(N_t_ >= self.codebook_usage_threshold, dtype=tf.float32))
+            # running average usage monitoring (Codebook Collapse...)
+            codebook_usage = tf.reduce_sum(tf.cast(self.N_t >= self.codebook_usage_threshold, dtype=tf.float32))
+            self.batch_usage_tracker.update_state(cur_codebook_usage)
+            self.usage_tracker.update_state(codebook_usage)
+            # Entropy (Codebook vector diversity)
+            code_prob = N_t_ / tf.reduce_sum(N_t_)
+            code_entropy = -tf.reduce_sum(code_prob * tf.math.log(code_prob + 1e-8))
+            self.entropy_tracker.update_state(code_entropy)
 
         ## DEBUG
         if debug:
