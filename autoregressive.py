@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow import keras
 from tensorflow.keras import layers
-from transformer.multi_head_attention import positional_encoding, create_look_ahead_mask
+from transformer.multi_head_attention import positional_encoding, create_look_ahead_mask, PositionalEmbedding
 
 '''
 Point wise feed forward network consists of two fully-connected layers with a ReLU activation in between.
@@ -71,6 +71,7 @@ class MHABasedAutoregressiveModel(keras.Model):
                  maximum_pos_encoding=5000,
                  drop_out_rate=0.1,
                  context_length=None,  # Almost not needed for vanilla Attention
+                 pos_emb=True,
                  **kwargs):
         super(MHABasedAutoregressiveModel, self).__init__(**kwargs)
 
@@ -78,15 +79,19 @@ class MHABasedAutoregressiveModel(keras.Model):
         self.bins = target_vocab_size
         self.d_model = width
         self.num_layers = depth
+        self.use_pos_embedding = pos_emb
 
         # Start Token
         self.start_token = self.bins - 1 # TODO: temporary, for |zq| == 512, pass in 513
 
         # 1. Embedding map indices to d_model length embedding
         self.x_embedding = layers.Embedding(self.bins, self.d_model)
-        # 2. Positional Embedding to add timing info (TODO: is this applicable?)
+        # 2.a Constant Positional Embedding to add timing info (TODO: is this applicable?)
         self.x_pos_encoding = positional_encoding(maximum_pos_encoding,
                                                   self.d_model)  # (1, maximum_pos_encoding, d_model)
+        # 2.b Explicit positional Embedding
+        if self.use_pos_embedding:
+            self.x_pos_embedding = PositionalEmbedding(self.context_length, self.d_model)
         # 3. Multiple MHA self attention layers
         self.mha_attn_layers = [MHASelfAttentionBlock(self.d_model, heads, ffn_width, drop_out_rate)
                                 # TODO: separate hyper for drop-out?
@@ -111,7 +116,12 @@ class MHABasedAutoregressiveModel(keras.Model):
 
         x = self.x_embedding(x)  # (batch_size, target_seq_len, d_model)
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
-        x += self.x_pos_encoding[:, :seq_len, :]
+
+        # x += self.x_pos_embedding.get_embeddings(seq_len) # (1, seq_len, d_model)
+        if self.use_pos_embedding:
+            x += self.x_pos_embedding(x, training=training) # (1, seq_len, d_model)
+        else:
+            x += self.x_pos_encoding[:, :seq_len, :]
 
         x = self.dropout(x, training=training)
 
@@ -227,6 +237,9 @@ if __name__ == '__main__':
 
     out, attn_w = automha(sample_in)
 
+    automha.summary()
+    # print(automha.x_pos_embedding.trainable_variables)
+
     print("Autoregressive Model Output: ", out.shape)
     print("Multi-head Self Attention: ", {k: v.shape for k, v in attn_w.items()})
 
@@ -235,7 +248,7 @@ if __name__ == '__main__':
 
     # Test Sampling
     ## attention weights for the whole sampled batch
-    sampled_sequence, sample_attn_w = automha.sample(n_samples=3)
+    sampled_sequence, sample_attn_w = automha.sample(n_samples=3, return_attention_weights=True)
 
     print(sampled_sequence.shape)
     print(sampled_sequence)

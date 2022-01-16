@@ -75,7 +75,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
         plt.show()
 
     print("[DEBUG] TOTAL Number of Trainable Weights for model: {}".format(
-        sum([np.prod(var.numpy().shape) for var in model.trainable_variables])))
+        sum([np.prod(var.numpy().shape) for var in model.vqvaes[level].trainable_variables])))
 
     # Direct Reconstruction (x -> x')
     input = test_sample
@@ -142,7 +142,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
         # sampled_codes, sampled_attn_w = prior_model.sample(n_samples=4)
         sampled_codes = prior_model.sample(n_samples=4)
 
-        print(f"Sampled output shape: {tf.shape(sampled_codes)}")
+        print(f"Sampled output shape: {tf.shape(sampled_codes)} (with Start Token...)")
         print(sampled_codes)
 
         # remove the start token

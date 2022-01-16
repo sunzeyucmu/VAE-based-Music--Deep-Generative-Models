@@ -49,6 +49,52 @@ def positional_encoding(position, d_model):
     return tf.cast(pos_encoding, dtype=tf.float32)
 
 
+class PositionalEmbedding(layers.Layer):
+    def __init__(self,
+                 num_embeddings,
+                 embedding_dim,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.embedding_dim = embedding_dim
+        self.num_embeddings = num_embeddings
+
+        # Initialize the embeddings which we will quantize.
+        w_init = tf.random_uniform_initializer()
+        # Latent Embedding Space: K x D/L
+        self.embeddings = tf.Variable(
+            initial_value=w_init(
+                shape=(self.num_embeddings, self.embedding_dim), dtype="float32"
+            ),
+            trainable=True,
+            name="positional_embedding",
+        ) # The Model Weights
+
+    def call(self, inputs, **kwargs):
+        seq_len = tf.shape(inputs)[1]
+        return tf.expand_dims(self.embeddings[:seq_len, :], axis=0)
+
+    def get_embeddings(self, sequence_length, **kwargs):
+        pos_embeddings = tf.expand_dims(self.embeddings[:sequence_length, :], axis=0)
+        return pos_embeddings
+
+
+
+class CustomSchedule(keras.optimizers.schedules.LearningRateSchedule):
+  def __init__(self, d_model, warmup_steps=4000):
+    super(CustomSchedule, self).__init__()
+
+    self.d_model = d_model
+    self.d_model = tf.cast(self.d_model, tf.float32)
+
+    self.warmup_steps = warmup_steps
+
+  def __call__(self, step):
+    arg1 = tf.math.rsqrt(step)
+    arg2 = step * (self.warmup_steps ** -1.5)
+
+    return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+
+
 if __name__ == '__main__':
     print("Multi-Head Attention Module!")
 
