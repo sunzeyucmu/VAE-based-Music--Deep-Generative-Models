@@ -11,6 +11,14 @@ def compare_t(t1, t2):
     return tf.reduce_sum(not_equal), not_equal
 
 
+def shape_list(x):
+    """
+    deal with dynamic shape in tensorflow cleanly
+    """
+    ps = x.get_shape().as_list()
+    ts = tf.shape(x)
+    return [ts[i] if ps[i] is None else ps[i] for i in range(len(ps))]
+
 def plot_attention_head(attention_mat, in_tokens=None, translated_tokens=None):
     """
       The plot is of the attention when a token was generated.

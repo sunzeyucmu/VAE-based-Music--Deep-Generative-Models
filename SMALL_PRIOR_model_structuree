@@ -1,0 +1,593 @@
+Loading prior in train mode
+Parameters Prior:160814080
+Prior Model Structure...
+SimplePrior(
+  (prior): ConditionalAutoregressive2D(
+    (x_emb): Embedding(1024, 1024)
+    (x_emb_dropout): Dropout(p=0.0, inplace=False)
+    (pos_emb): PositionEmbedding()
+    (pos_emb_dropout): Dropout(p=0.0, inplace=False)
+    (transformer): Transformer(
+      (_attn_mods): ModuleList(
+        (0): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (1): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (2): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (3): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (4): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (5): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (6): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (7): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (8): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (9): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (10): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (11): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (12): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (13): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (14): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (15): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (16): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (17): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (18): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (19): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (20): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (21): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (22): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (23): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (24): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (25): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (26): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (27): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (28): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (29): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (30): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (31): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (32): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (33): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (34): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (35): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (36): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (37): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (38): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (39): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (40): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (41): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (42): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (43): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (44): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (45): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (46): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+        (47): ResAttnBlock(
+          (attn): FactoredAttention(
+            (c_attn): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_0): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): MLP(
+            (c_fc): Conv1D()
+            (c_proj): Conv1D()
+          )
+          (ln_1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+        )
+      )
+    )
+    (x_out): Linear(in_features=1024, out_features=1024, bias=False)
+    (loss): CrossEntropyLoss()
+  )
+)
