@@ -1,0 +1,1 @@
+python jukebox/train.py --hps=small_vqvae,small_prior,all_fp16,cpu_ema --name=small_prior --sample_length=2097152 --bs=4  --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=1 --weight_decay=0.01 --save_iters=1000

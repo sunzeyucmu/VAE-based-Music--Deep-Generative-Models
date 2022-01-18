@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow import keras
 from tensorflow.keras import layers
-from transformer.multi_head_attention import positional_encoding, create_look_ahead_mask, PositionalEmbedding
+from src.transformer.multi_head_attention import positional_encoding, create_look_ahead_mask, PositionalEmbedding
 
 '''
 Point wise feed forward network consists of two fully-connected layers with a ReLU activation in between.
