@@ -30,7 +30,11 @@ class FactorizedAttention(layers.Layer):
         self.block_len = self.ctx_len // blocks  # $ l: strides_len
 
         # TODO: separate query, key value
-        self.qkv_conv = layers.Conv1D(self.width * 3, 3, strides=1, dilation_rate=1, padding="same")
+        print(f'[DEBUG] CAUSAL CONV1D, with No Mask pre-row attention')
+        # print(f'[DEBUG] DENSE QKV')
+        # self.qkv_conv = layers.Conv1D(self.width * 3, 3, strides=1, dilation_rate=1, padding="same") # Converge to 99% accuracty < 30 epochs (training, ground-truth fed each step)
+        self.qkv_conv = layers.Conv1D(self.width * 3, 3, strides=1, dilation_rate=1, padding="causal")  # CAUSAL CONV1D
+        # self.qkv_conv = layers.Dense(self.width * 3) # For Debug only, given the conv1D is $$NON-CAUSAL$$$!!!
         # Note that 'key_dim/query_dim and value_dim' being size of each $attention head$ for query and key.
         self.mha = layers.MultiHeadAttention(num_heads=num_heads, key_dim=self.width // num_heads,
                                              value_dim=self.width // num_heads)  # key_dim == query_dim
@@ -57,18 +61,153 @@ class FactorizedAttention(layers.Layer):
         """
         ctx_len = tf.shape(inputs)[1]
 
-        x = self.qkv_conv(inputs, training=training) # (N, T, 3*d)
-        query, key, value = tf.split(x, num_or_size_splits=3, axis=-1) # (N, T, d)
+        x = self.qkv_conv(inputs, training=training)  # (N, T, 3*d)
+        query, key, value = tf.split(x, num_or_size_splits=3, axis=-1)  # (N, T, d)
 
-        attn_out, attn_w = self.attn(query, key, value)
-        out = self.proj(attn_out) # (N, T, D)
+        attn_out, attn_w = self.attn(query, key, value, training=training)
+        out = self.proj(attn_out, training=training)  # (N, T, D)
 
         if return_attention_weights:
             return self.attn_dropout(out, training=training), attn_w
         return self.attn_dropout(out, training=training)
 
+    def row_attn(self, q, k, v, training=False, sample=False):
+        """
 
-    def row_attn(self, q, k, v, sample=False):
+        :param training:
+        :param q:
+        :param k:
+        :param v:
+        :param sample: TODO
+        :return:
+        """
+
+        N, L, D = shape_list(k)
+        Lq = shape_list(q)[1]
+
+        # tf.print("Query Length: ", Lq)
+        # tf.print("Block Length: ", self.block_len)
+        # TODO
+        # assert Lq == L
+        tf.debugging.assert_equal(
+            Lq, L, message="Query length and Key/Value length not equal!",
+            summarize=None, name=None
+        )
+
+        # print(f'[DEBUG][Factorized Attn|Row] If-condition in TF-Function...')
+        trail_len = Lq % self.block_len
+        num_blocks = Lq // self.block_len  # current full blocks
+
+        # For tf.function
+        # TODO: understand this...
+        mha_out = q
+        mha_attn = tf.zeros([N, self.num_heads, Lq, L])
+
+        if trail_len > 0:
+            q_cur = q[:, -trail_len:, :]
+            k_cur = k[:, -trail_len:, :]
+            v_cur = v[:, -trail_len:, :]
+            # [N, trail_len, D]
+            mha_out, mha_attn = self.mha(query=q_cur, key=k_cur, value=v_cur,
+                                             attention_mask=create_look_ahead_mask(trail_len, trail_len),
+                                             return_attention_scores=True, training=training)
+
+            q = q[:, :-trail_len, :]
+            k = k[:, :-trail_len, :]
+            v = v[:, :-trail_len, :]
+
+        # for pixels (if any) before latest block, regular row attention
+        if num_blocks > 0:
+            q = tf.reshape(q, [N * num_blocks, self.block_len, D])
+            k = tf.reshape(k, [N * num_blocks, self.block_len, D])
+            v = tf.reshape(v, [N * num_blocks, self.block_len, D])
+
+            attn_mask = create_look_ahead_mask(self.block_len, self.block_len)
+            mha_out_complete, mha_attn_complete = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
+                                                  return_attention_scores=True)
+
+            mha_out_complete = tf.reshape(mha_out_complete, [N, num_blocks * self.block_len, D])
+
+            if trail_len > 0:
+                mha_out = tf.concat([mha_out_complete, mha_out], axis=1)
+            else:
+                mha_out = mha_out_complete
+                mha_attn = mha_attn_complete
+
+        # tf.debugging.assert_equal(
+        #     tf.shape(mha_out), tf.constant([N, Lq, D]), message="Shape not Legit during sampling",
+        #     summarize=None, name=None
+        # )
+        return mha_out, mha_attn
+
+        # # TODO: solve this... either work for training or work only for sampling....
+        # if not sample:
+        #     num_blocks = Lq // self.block_len
+        #
+        #     tf.debugging.assert_equal(Lq, num_blocks * self.block_len, "WTF...")
+        #
+        #     # reshape the input sequence (N, L, D) into 2D sequence [blocks, block length]
+        #     q = tf.reshape(q, [N * num_blocks, self.block_len, D])
+        #     # TODO: if Lq != L, then the batch dim would be different!
+        #     k = tf.reshape(k, [N * num_blocks, self.block_len, D])
+        #     v = tf.reshape(v, [N * num_blocks, self.block_len, D])
+        #
+        #     attn_mask = create_look_ahead_mask(self.block_len, self.block_len)
+        #     mha_out, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
+        #                                  return_attention_scores=True, training=training)
+        #
+        #     return tf.reshape(mha_out, [N, Lq, D]), mha_attn
+        # else:
+        #     if Lq % self.block_len == 0:
+        #     # if tf.shape(q)[1] % self.block_len == 0:
+        #     # if tf.equal(Lq % self.block_len, 0):
+        #     # if tf.math.floormod(Lq, self.block_len) == tf.constant(0):
+        #         num_blocks = Lq // self.block_len
+        #
+        #         # reshape the input sequence (N, L, D) into 2D sequence [blocks, block length]
+        #         q = tf.reshape(q, [N * num_blocks, self.block_len, D])
+        #         # TODO: if Lq != L, then the batch dim would be different!
+        #         k = tf.reshape(k, [N * num_blocks, self.block_len, D])
+        #         v = tf.reshape(v, [N * num_blocks, self.block_len, D])
+        #
+        #         attn_mask = create_look_ahead_mask(self.block_len, self.block_len)
+        #         mha_out, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
+        #                                      return_attention_scores=True, training=training)
+        #
+        #         return tf.reshape(mha_out, [N, Lq, D]), mha_attn
+        #     # During Autoregressive sampling steps, when generation has to be done steps by steps
+        #     else:
+        #         # for pixels ( < block_len) within latest block, apply mha directly
+        #         trail_len = Lq % self.block_len
+        #         tf.debugging.assert_none_equal(trail_len, 0, "WTF...")
+        #         num_blocks = Lq // self.block_len  # current full blocks
+        #         q_cur = q[:, -trail_len:, :]
+        #         k_cur = k[:, -trail_len:, :]
+        #         v_cur = v[:, -trail_len:, :]
+        #         # [N, trail_len, D]
+        #         mha_out, mha_attn_cur = self.mha(query=q_cur, key=k_cur, value=v_cur,
+        #                                          attention_mask=create_look_ahead_mask(trail_len, trail_len),
+        #                                          return_attention_scores=True, training=training)
+        #         # for pixels (if any) before latest block, regular row attention
+        #         if num_blocks > 0:
+        #             q = tf.reshape(q[:, :-trail_len, :], [N * num_blocks, self.block_len, D])
+        #             k = tf.reshape(k[:, :-trail_len, :], [N * num_blocks, self.block_len, D])
+        #             v = tf.reshape(v[:, :-trail_len, :], [N * num_blocks, self.block_len, D])
+        #
+        #             attn_mask = create_look_ahead_mask(self.block_len, self.block_len)
+        #             mha_out_complete, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
+        #                                                   return_attention_scores=True)
+        #
+        #             mha_out_complete = tf.reshape(mha_out_complete, [N, num_blocks * self.block_len, D])
+        #             mha_out = tf.concat([mha_out_complete, mha_out], axis=1)
+        #
+        #         tf.debugging.assert_equal(
+        #             tf.shape(mha_out), tf.constant([N, Lq, D]), message="Shape not Legit during sampling",
+        #             summarize=None, name=None
+        #         )
+        #         return mha_out, mha_attn_cur
+
+    def col_attn(self, q, k, v, training=False, sample=False):
         """
 
         :param q:
@@ -81,56 +220,92 @@ class FactorizedAttention(layers.Layer):
         N, L, D = shape_list(k)
         Lq = shape_list(q)[1]
         # TODO
-        assert Lq == L
-        num_blocks = Lq // self.block_len
+        # assert Lq == L
+        tf.debugging.assert_equal(
+            Lq, L, message="Query length and Key/Value length not equal!",
+            summarize=None, name=None
+        )
 
-        # reshape the input sequence (N, L, D) into 2D sequence [blocks, block length]
-        q = tf.reshape(q, [N * num_blocks, self.block_len, D])
-        # TODO: if Lq != L, then the batch dim would be different!
-        k = tf.reshape(k, [N * num_blocks, self.block_len, D])
-        v = tf.reshape(v, [N * num_blocks, self.block_len, D])
+        trail_len = Lq % self.block_len
+        num_blocks = Lq // self.block_len  # current full blocks
 
-        attn_mask = create_look_ahead_mask(self.block_len, self.block_len)
-        mha_out, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
-                                     return_attention_scores=True)  # , training=training)
+        # TODO: Eliminate all if-conditions ...
+        mha_out = tf.random.normal([N, 0, D]) # Empty
+        mha_attn = tf.zeros([N, self.num_heads, Lq, L])
 
-        return tf.reshape(mha_out, [N, Lq, D]), mha_attn
+        if trail_len > 0:
+            k_cur = k[:, -trail_len:, :] # (N, trail_l, D)
+            k_cur_prev = tf.reshape(k[:, :-trail_len, :], [N, num_blocks, self.block_len, D])[:, :, :trail_len, :] # (N, blocks, trail_l, D)
+            k_cur = tf.concat([k_cur_prev, tf.expand_dims(k_cur, axis=1)], axis=1)
+            v_cur = v[:, -trail_len:, :]
+            v_cur_prev = tf.reshape(v[:, :-trail_len, :], [N, num_blocks, self.block_len, D])[:, :, :trail_len, :] # (N, blocks, trail_l, D)
+            v_cur = tf.concat([v_cur_prev, tf.expand_dims(v_cur, axis=1)], axis=1)
+            k_cur = tf.reshape(tf.transpose(k_cur, [0, 2, 1, 3]), [N*trail_len, num_blocks+1, D]) # (N*trail_l, blocks+1, D)
+            v_cur = tf.reshape(tf.transpose(v_cur, [0, 2, 1, 3]), [N * trail_len, num_blocks + 1, D])  # (N*trail_l, blocks+1, D)
 
+            q_cur = q[:, -trail_len:, :] # (N, trail_l, D)
+            q_cur = tf.reshape(q_cur, [N*trail_len, 1, D]) # (N*trail_l, 1, D)
+            # q_cur = tf.reshape(q[:, :-trail_len, :], [N, num_blocks, self.block_len, D])[:, :, :trail_len, :] # (N, blocks, trail_l, D)
 
-    def col_attn(self, q, k, v, sample=False):
-        """
+            # No Masks needed
+            # out: (N*trail_l, 1, D); attn: (N*trail_l, H, 1, blocks/rows+1)
+            mha_out, mha_attn = self.mha(query=q_cur, key=k_cur, value=v_cur, attention_mask=None,
+                                         return_attention_scores=True, training=training)
+            mha_out = tf.reshape(mha_out, [N, trail_len, D])
 
-        :param q:
-        :param k:
-        :param v:
-        :param sample: TODO
-        :return:
-        """
+            q = q[:, :-trail_len, :]
+            k = k[:, :-trail_len, :]
+            v = v[:, :-trail_len, :]
 
-        N, L, D = shape_list(k)
-        Lq = shape_list(q)[1]
-        # TODO
-        assert Lq == L
-        num_q_blocks = Lq // self.block_len
-        num_kv_blocks = L // self.block_len # q, kv num blocks no need to be equal
-        # print("Before Col Transpose to Row: ", tf.reshape(q, [N, num_q_blocks, self.block_len, D])[0,...,0])
-        q = tf.transpose(tf.reshape(q, [N, num_q_blocks, self.block_len, D]), [0, 2, 1, 3]) # (N, l, blocks, D)
+        q = tf.transpose(tf.reshape(q, [N, num_blocks, self.block_len, D]), [0, 2, 1, 3])  # (N, l, blocks, D)
         # print("After Col Transpose to Row: ", q[0, ..., 0])
-        k = tf.transpose(tf.reshape(k, [N, num_kv_blocks, self.block_len, D]), [0, 2, 1, 3]) # (N, l, blocks, D)
-        k = tf.transpose(tf.reshape(v, [N, num_kv_blocks, self.block_len, D]), [0, 2, 1, 3])  # (N, l, blocks, D)
+        k = tf.transpose(tf.reshape(k, [N, num_blocks, self.block_len, D]), [0, 2, 1, 3])  # (N, l, blocks, D)
+        v = tf.transpose(tf.reshape(v, [N, num_blocks, self.block_len, D]), [0, 2, 1, 3])  # (N, l, blocks, D)
 
-        q = tf.reshape(q, [N*self.block_len, num_q_blocks, D]) # (N*l, blocks, D), l*blocks = Tq
-        k = tf.reshape(k, [N*self.block_len, num_kv_blocks, D])
-        v = tf.reshape(v, [N*self.block_len, num_kv_blocks, D])
+        q = tf.reshape(q, [N * self.block_len, num_blocks, D])  # (N*l, blocks, D), l*blocks = Tq - trail_l
+        k = tf.reshape(k, [N * self.block_len, num_blocks, D])
+        v = tf.reshape(v, [N * self.block_len, num_blocks, D])
 
-        attn_mask = create_look_ahead_mask(num_q_blocks, num_kv_blocks)
+        attn_mask = create_look_ahead_mask(num_blocks, num_blocks)
 
-        mha_out, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
-                                     return_attention_scores=True)  # , training=training)
+        # out: (N*l, blocks, D)
+        # Note if num_blocks == 0 (sampling in the 1st very block...), out: (N*l, 0, D)
+        mha_out_complete, mha_attn_complete = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
+                                     return_attention_scores=True, training=training)
+        # $$$ Note we need to transpose back to input sequence order
+        mha_out_complete = tf.reshape(mha_out_complete, [N, self.block_len,  num_blocks, D])
+        mha_out_complete = tf.transpose(mha_out_complete, [0, 2, 1, 3]) # (N, blocks, l, D)
+        mha_out_complete = tf.reshape(mha_out_complete, [N, num_blocks * self.block_len, D])
 
-        return tf.reshape(mha_out, [N, Lq, D]), mha_attn
+        if trail_len > 0:
+            mha_out = tf.concat([mha_out_complete, mha_out], axis=1) # (N, Lq, D)
+        else:
+            mha_out = mha_out_complete
+            mha_attn = mha_attn_complete
 
-    def prev_row_attn(self, q, k, v, sample=False):
+        return mha_out, mha_attn
+
+        # # Training Version (Full size Attn Block)
+        # num_q_blocks = Lq // self.block_len
+        # num_kv_blocks = L // self.block_len  # q, kv num blocks no need to be equal
+        # # print("Before Col Transpose to Row: ", tf.reshape(q, [N, num_q_blocks, self.block_len, D])[0,...,0])
+        # q = tf.transpose(tf.reshape(q, [N, num_q_blocks, self.block_len, D]), [0, 2, 1, 3])  # (N, l, blocks, D)
+        # # print("After Col Transpose to Row: ", q[0, ..., 0])
+        # k = tf.transpose(tf.reshape(k, [N, num_kv_blocks, self.block_len, D]), [0, 2, 1, 3])  # (N, l, blocks, D)
+        # k = tf.transpose(tf.reshape(v, [N, num_kv_blocks, self.block_len, D]), [0, 2, 1, 3])  # (N, l, blocks, D)
+        #
+        # q = tf.reshape(q, [N * self.block_len, num_q_blocks, D])  # (N*l, blocks, D), l*blocks = Tq
+        # k = tf.reshape(k, [N * self.block_len, num_kv_blocks, D])
+        # v = tf.reshape(v, [N * self.block_len, num_kv_blocks, D])
+        #
+        # attn_mask = create_look_ahead_mask(num_q_blocks, num_kv_blocks)
+        #
+        # mha_out, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
+        #                              return_attention_scores=True , training=training)
+        #
+        # return tf.reshape(mha_out, [N, Lq, D]), mha_attn
+
+    def prev_row_attn(self, q, k, v, training=False, sample=False):
         """
 
         :param q:
@@ -143,115 +318,198 @@ class FactorizedAttention(layers.Layer):
         N, L, D = shape_list(k)
         Lq = shape_list(q)[1]
         # TODO
-        assert Lq == L
-        num_blocks = Lq // self.block_len
+        # assert Lq == L
+        tf.debugging.assert_equal(
+            Lq, L, message="Query length and Key/Value length not equal!",
+            summarize=None, name=None
+        )
 
-        q = tf.reshape(q, [N * num_blocks, self.block_len, D])
+        trail_len = Lq % self.block_len
+        num_blocks = Lq // self.block_len  # current full blocks
+
+        # TODO: understand this...
+        mha_out = q
+        mha_attn = tf.zeros([N, self.num_heads, Lq, L])
+
+        if trail_len > 0:
+            q_cur = q[:, -trail_len:, :] # (N, trail_l, D)
+            # Decide prev key and value
+            if num_blocks > 0:
+                start_idx = (num_blocks-1) * self.block_len
+                k_cur = k[:, start_idx:start_idx+self.block_len, :] # (N, l, D)
+                v_cur = v[:, start_idx:start_idx+self.block_len, :] # (N, l, D)
+            else:
+                # Pad with zero
+                k_cur = tf.zeros([N, self.block_len, D]) # (N, l, D)
+                v_cur = tf.zeros([N, self.block_len, D]) # (N, l, D)
+
+            # No Masks needed
+            # out: (N, trail_l, D); attn: (N, H, trail_l, l)
+            mha_out, mha_attn = self.mha(query=q_cur, key=k_cur, value=v_cur, attention_mask=None,
+                                         return_attention_scores=True, training=training)
+
+            q = q[:, :-trail_len, :]
+            k = k[:, :-trail_len, :]
+            v = v[:, :-trail_len, :]
+
+        q = tf.reshape(q, [N * num_blocks, self.block_len, D]) # (N*blocks, l, D)
 
         # 1.remove current block from bottom
         # print("Before Shift Blocks: ", tf.reshape(k, [N, num_blocks, self.block_len, D])[0, ..., 0].numpy())
-        k = tf.reshape(k, [N, num_blocks, self.block_len, D])[:, :-1, :, :]
+        # 1. For sampling with empty prev row: Pad first
+        k = tf.reshape(k, [N, num_blocks, self.block_len, D]) # (N, blocks, l, D)
         # print("After Shift Blocks: ", k[0, ..., 0].numpy())
-        v = tf.reshape(v, [N, num_blocks, self.block_len, D])[:, :-1, :, :]
+        v = tf.reshape(v, [N, num_blocks, self.block_len, D])
         # 2. pad dim:-3, the num_blocks dimension with extra block at top
         # print("Before Pad: ", k[0, ..., 0].numpy())
         k = tf.pad(k, paddings=[[0, 0], [1, 0], [0, 0], [0, 0]], mode='CONSTANT')
         # print("After Pad: ", k[0, ..., 0].numpy())
         v = tf.pad(v, paddings=[[0, 0], [1, 0], [0, 0], [0, 0]], mode='CONSTANT')
+        # Then Shift forward to remove current block
+        k = k[:, :-1, :, :]
+        v = v[:, :-1, :, :]
         # 1 && 2 combined ==> shift forward k, v blocks by one block
         k = tf.reshape(k, [N * num_blocks, self.block_len, D])
         v = tf.reshape(v, [N * num_blocks, self.block_len, D])
         # TODO: if Lq < L?
 
-        attn_mask = create_look_ahead_mask(self.block_len, self.block_len)
-        mha_out, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
-                                     return_attention_scores=True)  # , training=training)
+        # No Masks needed
+        # out: (N, blocks*l, D)
+        mha_out_complete, mha_attn_complete = self.mha(query=q, key=k, value=v, attention_mask=None,
+                                     return_attention_scores=True, training=training)
+        mha_out_complete = tf.reshape(mha_out_complete, [N, num_blocks*self.block_len, D])
 
-        return tf.reshape(mha_out, [N, Lq, D]), mha_attn
+        if trail_len > 0:
+            mha_out = tf.concat([mha_out_complete, mha_out], axis=1) # (N, Lq, D)
+        else:
+            mha_out = mha_out_complete
+            mha_attn = mha_attn_complete
+
+        return mha_out, mha_attn
+
+        # num_blocks = Lq // self.block_len
+        #
+        # q = tf.reshape(q, [N * num_blocks, self.block_len, D])
+        #
+        # # 1.remove current block from bottom
+        # # print("Before Shift Blocks: ", tf.reshape(k, [N, num_blocks, self.block_len, D])[0, ..., 0].numpy())
+        # k = tf.reshape(k, [N, num_blocks, self.block_len, D])[:, :-1, :, :]
+        # # print("After Shift Blocks: ", k[0, ..., 0].numpy())
+        # v = tf.reshape(v, [N, num_blocks, self.block_len, D])[:, :-1, :, :]
+        # # 2. pad dim:-3, the num_blocks dimension with extra block at top
+        # # print("Before Pad: ", k[0, ..., 0].numpy())
+        # k = tf.pad(k, paddings=[[0, 0], [1, 0], [0, 0], [0, 0]], mode='CONSTANT')
+        # # print("After Pad: ", k[0, ..., 0].numpy())
+        # v = tf.pad(v, paddings=[[0, 0], [1, 0], [0, 0], [0, 0]], mode='CONSTANT')
+        # # 1 && 2 combined ==> shift forward k, v blocks by one block
+        # k = tf.reshape(k, [N * num_blocks, self.block_len, D])
+        # v = tf.reshape(v, [N * num_blocks, self.block_len, D])
+        # # TODO: if Lq < L?
+        #
+        # attn_mask = create_look_ahead_mask(self.block_len, self.block_len)
+        # mha_out, mha_attn = self.mha(query=q, key=k, value=v, attention_mask=attn_mask,
+        #                              return_attention_scores=True, training=training)
+        #
+        # return tf.reshape(mha_out, [N, Lq, D]), mha_attn
 
 
 if __name__ == '__main__':
     print("Factorized Attention Module!")
 
-    np.set_printoptions(precision=2)
+    np.set_printoptions(precision=6)
 
     # Sequence of length 16
     query = tf.random.normal([4, 16, 48])
     key = tf.random.normal([4, 16, 48])
     value = tf.random.normal([4, 16, 48])
 
-    # attn_mask = create_look_ahead_mask(query.shape[1], key.shape[1])
-    #
-    # print("Attention Mask(Auto-Regressive): ", attn_mask)
-    #
-    # mha = layers.MultiHeadAttention(num_heads=4, key_dim=4, value_dim=4)  # key_dim == query_dim
-    #
-    # query_input = tf.keras.Input(shape=[8, 12])
-    # value_input = tf.keras.Input(shape=[4, 12])
-    # output, attn_w = mha(query_input, value_input, return_attention_scores=True)
-    # # B, T, E (E being the output dimension of the query if output_shape not specified)
-    # print(output.shape)  # (B, Tq, E(query_dim))
-    # print(attn_w.shape)  # (B, H, Tq, Tkv)
-    #
-    # mha_out, mha_attn = mha(query=query, key=key,
-    #                         value=value, return_attention_scores=True, attention_mask=attn_mask)
-    #
-    # print(mha_attn[0][0].numpy())  # (pick first attention Head
-    # # print(mha_attn[1][0].numpy()) # Validate batch dim...
-    #
-    # ## Block Attention: Reshape sequence into attention block (b x l)
-    # L = tf.shape(query)[1]
-    # b = 4
-    # l = L // b
-    # query_block = tf.reshape(query,
-    #                          [tf.shape(query)[0] * b, l, tf.shape(query)[-1]])  # extend blocks to batch dimension
-    # key_block = tf.reshape(key, [tf.shape(query)[0] * b, l, tf.shape(query)[-1]])
-    # value_block = tf.reshape(value, [tf.shape(query)[0] * b, l, tf.shape(query)[-1]])
-    #
-    # attn_mask_block = create_look_ahead_mask(query_block.shape[1], key_block.shape[1])
-    #
-    # mha_out_block, mha_attn_block = mha(query=query_block, key=key_block,
-    #                                     value=value_block, return_attention_scores=True, attention_mask=attn_mask_block)
-    #
-    # print(mha_out_block.shape)
-    # print(mha_attn_block.shape, mha_attn_block[0][0].numpy())  # attention within each attn block
-
-    # (N, H, Tq, Tv) -> (H, N, Tq, Tv) ->
-    # mha_attn_block_recover = tf.reshape(tf.transpose(mha_out_block, (1, 0, 2, 3)), [-1, tf.shape(query)[0], L, ]
-
-    # fmha = FactorizedAttention(ctc_len=16, num_heads=4, d_model=48, blocks=4)
-    #
-    # fmha_out, fmha_attn = fmha.prev_row_attn(query, key, value)
-    #
-    # print(fmha_out.shape, fmha_attn.shape)
-    #
-    # print(fmha_attn[0][0].numpy())
-    #
-    # fmha_col, fmha_col_attn = fmha.col_attn(query, key, value)
-    #
-    # print(fmha_col.shape, fmha_col_attn.shape)
-    #
-    # print(fmha_col_attn[0][0].numpy())
-    #
-    # fmha_row, fmha_row_attn = fmha.row_attn(query, key, value)
-    #
-    # print(fmha_row.shape, fmha_row_attn.shape)
-    #
-    # print(fmha_row_attn[0][0].numpy())
-
     for attn_func in [0, 1, 2]:
-        fmha = FactorizedAttention(ctc_len=16, num_heads=4, d_model=48, blocks=4, attn_func=attn_func)
+    # for attn_func in [0]: # ROW
+    # for attn_func in [1]: # COL
+    # for attn_func in [2]: # PREV-ROW
+    #     fmha = FactorizedAttention(ctc_len=16, num_heads=4, d_model=48, blocks=4, attn_func=attn_func)
+        fmha = FactorizedAttention(ctc_len=16, num_heads=1, d_model=4, blocks=4, attn_func=attn_func)
+        # QKV Conv1D
+
         inputs = tf.random.normal([4, 16, 48])
         fmha_out, fmha_attn_w = fmha(inputs, training=False, return_attention_weights=True)
 
-        print("Attention Type: ", fmha.attn_type)
+        print(f"Conv 1D variables: {print([(v.name, w.shape) for v, w in zip(fmha.qkv_conv.trainable_variables, fmha.qkv_conv.get_weights())])}")
+
+        print(f"------------------------------Attention Type: {fmha.attn_type} ------------------------------------")
         print(fmha_out.shape, fmha_attn_w.shape)
 
         print(fmha_attn_w[0][0].numpy())
 
         # Check Sampling
-        sample_x = tf.random.normal([4, 1, 48])
-        sample_out, sample_attn_w = fmha(sample_x, traininig=False, return_attention_weights=True)
-        print(sample_out.shape, sample_attn_w.shape)
+
+        print("Start Sampling Test....")
+        for i in range(16): # until batch input sequence len
+            # pre-condition
+            sample_x = inputs[:, :i+1, :]
+            tf.debugging.assert_equal(sample_x, inputs[:, :i+1, :])
+            sample_out, sample_attn_w = fmha(sample_x, traininig=False, return_attention_weights=True, sample=True)
+            print(sample_out.shape, sample_attn_w.shape)
+            # print(f"Sample {i}")
+            # print(sample_out[..., 0])
+            # print(f"Batch {i}")
+            # print(fmha_out[:, :i + 1, :][..., 0])
+
+            # sample output at step i should equal to the same position batch output
+            diff = tf.math.abs(sample_out - fmha_out[:, :i + 1, :])
+
+            tf.debugging.assert_less_equal(tf.reduce_max(diff), 1e-6)
+            print(f"Sample {i}, Max DIFF: {tf.reduce_max(diff)}")
+            # tf.debugging.assert_equal(sample_out, fmha_out[:, :i+1, :])
+            # print(sample_attn_w[0][0])
+            # Get The latest token only... to be optimized (don't need to full pass the whole generated sequence at each step...)
+            # sample_x = tf.concat([sample_x, sample_out[:, -1:, :]], axis=1
+            # break down inputs at each step
+
+        fmha_out
+
+        # # Check Sampling
+        # # sample_x = tf.random.normal([4, 1, 48])
+        # sample_x = inputs[:, :1, :]
+
+        # # Attn function level
+        # x = tf.random.normal([4, 16, 12])
+        #
+        # batch_out, batch_attn_w = fmha.attn(x, x, x, training=False)
+        # print(batch_out.shape)
+        #
+        # sample_x = x[:, :1, :]
+        #
+        # for i in range(16):
+        #     # pre condition
+        #     sample_x = x[:, :i+1, :]
+        #     tf.debugging.assert_equal(sample_x, x[:, :i+1, :])
+        #     sample_out, sample_attn_w = fmha.attn(sample_x, sample_x, sample_x, training=False)
+        #     print(sample_out.shape, sample_attn_w.shape)
+        #
+        #     diff = tf.math.abs(sample_out - batch_out[:, :i + 1, :])
+        #
+        #     # check the output
+        #     tf.debugging.assert_less_equal(tf.reduce_max(diff), 1e-6)
+
+            # attach next
 
 
+        # for i in range(16): # until batch input sequence len
+        #     # pre-condition
+        #     sample_x = inputs[:, :i+1, :]
+        #     tf.debugging.assert_equal(sample_x, inputs[:, :i+1, :])
+        #     sample_out, sample_attn_w = fmha(sample_x, traininig=False, return_attention_weights=True, sample=True)
+        #     print(sample_out.shape, sample_attn_w.shape)
+        #
+        #     # sample output at step i should equal to the same position batch output
+        #     diff = tf.math.abs(sample_out - fmha_out[:, :i + 1, :])
+        #
+        #     tf.debugging.assert_less_equal(tf.reduce_max(diff), 1e-6)
+        #     # tf.debugging.assert_equal(sample_out, fmha_out[:, :i+1, :])
+        #     # print(sample_attn_w[0][0])
+        #     # Get The latest token only... to be optimized (don't need to full pass the whole generated sequence at each step...)
+        #     # sample_x = tf.concat([sample_x, sample_out[:, -1:, :]], axis=1
+        #     # break down inputs at each step
+        #
+        # fmha_out

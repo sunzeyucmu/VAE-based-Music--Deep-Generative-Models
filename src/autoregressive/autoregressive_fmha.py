@@ -93,7 +93,46 @@ class FMHABasedAutoregressiveModel(keras.Model):
         :param return_attention_weights:
         :return:
         """
-        raise NotImplementedError
+        if max_length is None:
+            max_length = self.context_length
+
+        start = tf.constant(self.start_token, dtype=tf.int64, shape=[n_samples, ])
+
+        # `tf.TensorArray` is required here (instead of a python list) so that the
+        # dynamic-loop can be traced by `tf.function`.
+        output_array = tf.TensorArray(dtype=tf.int64, size=0, dynamic_size=True)
+        output_array = output_array.write(0, start)
+
+        for i in tf.range(max_length):
+            output = tf.transpose(output_array.stack())  # (N, i+1); when i==0, start_token at each position
+            # (N, i+1, D) raw logits; Note that we don't need to do full sequence inference... TODO: improvement
+            predictions, _ = self.call(output, training=False)
+
+            # select the last token from the seq_len dimension
+            predictions = predictions[:, -1:, :]  # (N, 1, D)
+
+            # Sampling 1: Greedy Search
+            ## TODO: others?
+            predicted_id = tf.argmax(predictions, axis=-1)  # (N, 1)
+
+            # concatentate the predicted_id to the output which is given to the decoder
+            # as its input.
+            output_array = output_array.write(i + 1, tf.squeeze(predicted_id))
+
+            # if predicted_id == end:
+            #     break
+
+        #  output.shape (N, max_length+1)
+        output = tf.transpose(output_array.stack())
+
+        # `tf.function` prevents us from using the attention_weights that were
+        # calculated on the last iteration of the loop. So recalculate them outside
+        # the loop.
+        if return_attention_weights:
+            _, attention_weights = self.call(output[:, :-1], training=False)
+            return output, attention_weights
+
+        return output
 
 if __name__ == '__main__':
     print('Factorized Multi-Head Attention based Autoregressive module!')
@@ -107,6 +146,7 @@ if __name__ == '__main__':
                                            heads=2,
                                            blocks=4,
                                            attn_stacks=1)
+    # automha.compile(run_eagerly=True)
 
     out, attn_w = automha(sample_in, training=False)
 
@@ -118,3 +158,15 @@ if __name__ == '__main__':
 
     for _, v in attn_w.items():
         print(v.numpy()[0][-1])
+
+    # Test Sampling
+    ## attention weights for the whole sampled batch
+    print(f"Validate Sampling...")
+    sampled_sequence, sample_attn_w = automha.sample(n_samples=3, return_attention_weights=True)
+
+    print(sampled_sequence.shape)
+    print(sampled_sequence)
+
+    for v, attn in sample_attn_w.items():
+        print(v)
+        print(attn[0][0])  # (One Head, one sampled

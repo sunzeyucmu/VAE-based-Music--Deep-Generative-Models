@@ -132,6 +132,7 @@ if __name__ == '__main__':
         print(k)
         print(v.numpy()[0][0])
 
+    print(f"Validate Variable length input (Mimic the sampling procedure)")
     sample_outputs, _ = transformer(tf.random.normal([4, 3, 48])) # TODO: During Sample, current sample_len < block_len (16/4==4 in this case)
 
     print(sample_outputs.shape)
