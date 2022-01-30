@@ -197,7 +197,7 @@ class VQVAE(keras.models.Model):
         """
             Independent Decoder structure
         :param level:
-        :param zq:
+        :param zq: latent , input to decoder
         :return:
         """
         return self.decode_level(zq, level)

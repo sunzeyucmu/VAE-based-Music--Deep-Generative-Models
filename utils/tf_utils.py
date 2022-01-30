@@ -41,7 +41,12 @@ def plot_attention_head(attention_mat, in_tokens=None, translated_tokens=None):
 
 def plot_attention_weights(attention_heads, name="MultiHeadAttention", sentence=None, translated_tokens=None):
     """
-    Plot attention matrix for multi-head attentions
+
+    :param attention_heads: attention matrix for each attn-head [H, Lq, Lkv]
+    :param name:
+    :param sentence:
+    :param translated_tokens:
+    :return:
     """
     # in_tokens = tf.convert_to_tensor([sentence])
     # in_tokens = tokenizers.pt.tokenize(in_tokens).to_tensor()
