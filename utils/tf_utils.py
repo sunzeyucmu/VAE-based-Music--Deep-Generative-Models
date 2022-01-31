@@ -183,3 +183,32 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
         plt.show()
 
     return ret
+
+
+def decode_latent(model, sampled_codes, level):
+    print(f"Sampled output shape: {tf.shape(sampled_codes)} (with Start Token...)")
+    print(sampled_codes)
+
+    # remove the start token
+    sampled_recons = model.decode(sampled_codes, level=level).numpy()
+    print(sampled_recons.shape)
+
+    print(
+        "-------------------------------- Reconstruction from Prior Sampling (non-prime)... --------------------------")
+
+    fig = plt.figure(figsize=(18, 6))
+
+    for i in range(sampled_recons.shape[0]):
+        waves = sampled_recons[i]
+        plt.subplot(1, 4, i + 1)
+
+        if i == 3:
+            print("X': ", waves.squeeze())
+            print(f"X range: [{np.amax(waves)}, {np.amin(waves)}]")
+
+        librosa.display.waveplot(waves.squeeze(), sr=SAMPLE_RATE)
+        plt.title(f"WavePlot - {idx_to_genres[i]}")
+
+    plt.show()
+
+    return sampled_recons

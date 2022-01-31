@@ -1,5 +1,7 @@
+import sys
 import tensorflow as tf
 import tensorflow_addons as tfa
+import tensorflow_probability as tfp
 from tensorflow import keras
 from tensorflow.keras import layers
 from src.transformer.multi_head_attention import positional_encoding, PositionalEmbedding
@@ -93,6 +95,8 @@ class FMHABasedAutoregressiveModel(keras.Model):
         :param return_attention_weights:
         :return:
         """
+        tf.print(f'[DEBUG SAMPLING] Random Gumbel Noise Sample at each step', output_stream=sys.stdout)
+        # tf.print(f'[DEBUG SAMPLING] Greedy Sample at each step', output_stream=sys.stdout)
         if max_length is None:
             max_length = self.context_length
 
@@ -113,11 +117,22 @@ class FMHABasedAutoregressiveModel(keras.Model):
 
             # Sampling 1: Greedy Search
             ## TODO: others?
-            predicted_id = tf.argmax(predictions, axis=-1)  # (N, 1)
+            # predicted_id = tf.argmax(predictions, axis=-1)  # (N, 1)
+
+            # Sampling 2: Sample from Categorical distribution
+            ##
+            # dist = tfp.distributions.Categorical(logits=predictions)
+            # predicted_id = tf.cast(dist.sample(), dtype=tf.int64) # (N, 1)
+
+            # Sampling 2.5: Gumbel Noise
+            dist = tfp.distributions.RelaxedOneHotCategorical(1, logits=predictions)
+            gumbel_samples = dist.sample()  # (N, 1, D)
+            # tf.print(f"[DEBUG] Gumbel output shape: {gumbel_samples.shape}", output_stream=sys.stdout)
+            predicted_id = tf.argmax(gumbel_samples, axis=-1)  # (N, 1)
 
             # concatentate the predicted_id to the output which is given to the decoder
             # as its input.
-            output_array = output_array.write(i + 1, tf.squeeze(predicted_id))
+            output_array = output_array.write(i + 1, tf.squeeze(predicted_id, axis=-1)) # (N, )
 
             # if predicted_id == end:
             #     break
@@ -133,6 +148,70 @@ class FMHABasedAutoregressiveModel(keras.Model):
             return output, attention_weights
 
         return output
+
+    def random_sample(self, loss_fn, seq_length=None, iterations=10, batch_per_iter=4, token_freq=0.50):
+        """
+        Random Search
+        :param loss_fn:
+        :param seq_length:
+        :param iterations:
+        :return:
+        """
+        best_loss = 1e10
+        best_sample = tf.zeros(shape=[1, seq_length])
+
+        if seq_length is None:
+            seq_length = self.context_length
+
+        for i in tf.range(iterations):
+            # (N, T+1) including the 'start_token' at 0
+            sampled_out = self.sample(n_samples=batch_per_iter, max_length=seq_length, return_attention_weights=False)
+            # (N, T)
+            target = sampled_out[:, 1:]
+            # (N, T, V); V being the codebook size
+            raw_logits, _ = self.call(sampled_out[:, :-1], training=False)
+            # compute the loss
+            # (N, T)
+            loss = loss_fn(target, raw_logits)
+            loss = tf.reduce_mean(loss, axis=-1) # (N, )
+            # best_sample_idx = tf.argmin(loss)
+            # best_cur_iter_loss = tf.reduce_min(loss)
+            # tf.print(f'Best Loss: {best_cur_iter_loss} for Iteration: {i}', output_stream=sys.stdout)
+            # if best_cur_iter_loss < best_loss:
+            #     # $$$Avoid too much occurrence of single token...
+            #     best_cur_sample = sampled_out[best_sample_idx]
+            #     y, idx, count = tf.unique_with_counts(best_cur_sample)
+            #     if tf.reduce_max(count) >= seq_length // 2:
+            #         tf.print(f'Token {y[tf.argmax(count)]} occurred {tf.reduce_max(count)} Times! Skipping...')
+            #     else:
+            #         best_loss = best_cur_iter_loss
+            #         best_sample = best_cur_sample
+            sorted_loss_idx = tf.argsort(loss, direction='ASCENDING')
+            # sorted_loss = tf.gather(loss, sorted_loss_idx)
+            iter_done = False
+            for k in tf.range(len(sorted_loss_idx)):
+                cur_idx = sorted_loss_idx[k]
+                cur_loss = loss[cur_idx]
+                # tf.print(f'Best Loss: {cur_loss} for Iteration: {i}-{k}', output_stream=sys.stdout)
+                if cur_loss < best_loss:
+                    tf.print(f'Best Loss: {cur_loss} for Iteration: {i}-{k}', output_stream=sys.stdout)
+                    # $$$Avoid too much occurrence of single token...
+                    best_cur_sample = sampled_out[cur_idx]
+                    y, idx, count = tf.unique_with_counts(best_cur_sample)
+                    if tf.reduce_max(count) >= tf.cast(seq_length * token_freq, tf.int32):
+                        tf.print(f'Token {y[tf.argmax(count)]} occurred {tf.reduce_max(count)} Times! Skipping...', output_stream=sys.stdout)
+                    else:
+                        best_loss = cur_loss
+                        best_sample = best_cur_sample
+                        # iter_done = True
+                else:
+                    break
+
+
+        return best_sample, best_loss
+
+
+
 
 if __name__ == '__main__':
     print('Factorized Multi-Head Attention based Autoregressive module!')
@@ -162,7 +241,8 @@ if __name__ == '__main__':
     # Test Sampling
     ## attention weights for the whole sampled batch
     print(f"Validate Sampling...")
-    sampled_sequence, sample_attn_w = automha.sample(n_samples=3, return_attention_weights=True)
+    ## 1. sample_size==1 2. sample_size > 1
+    sampled_sequence, sample_attn_w = automha.sample(n_samples=4, return_attention_weights=True)
 
     print(sampled_sequence.shape)
     print(sampled_sequence)
@@ -170,3 +250,17 @@ if __name__ == '__main__':
     for v, attn in sample_attn_w.items():
         print(v)
         print(attn[0][0])  # (One Head, one sampled
+
+    print(f'Validate Random Search...')
+    loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
+
+    best_sample, best_loss = automha.random_sample(loss_fn, seq_length=10, iterations=10)
+
+    print(f'Best Sample: {best_sample.shape}, with loss per word: {best_loss}')
+
+
+    ## Idx Sort + Gather example
+    b = tf.random.normal([6, 4])
+    idx = tf.argsort(tf.reduce_sum(b, axis=-1))
+    tf.gather(b, idx, batch_dims=0)
+
