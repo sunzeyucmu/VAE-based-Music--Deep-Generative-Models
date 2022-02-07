@@ -48,7 +48,7 @@ class DecoderConvBlock(layers.Layer):
     @reverse_dilation: normally true for decoder block
     """
 
-    def __init__(self, output_dim, embed_width, embed_depth, dilation_factor=1, reverse_dilation=True, stride=2,
+    def __init__(self, output_dim, embed_width, embed_depth, dilation_factor=1, reverse_dilation=True, dilation_cycle=None, stride=2,
                  down_depth=4, **kwargs):
         super(DecoderConvBlock, self).__init__(**kwargs)
 
@@ -61,7 +61,7 @@ class DecoderConvBlock(layers.Layer):
         # II. Multiple up-sampling layers
         for i in range(down_depth):
             # 1.dilated residual stack
-            self.model.add(DilatedResnet1D(embed_width, embed_depth, dilation_factor=dilation_factor, reverse_dilation=reverse_dilation))
+            self.model.add(DilatedResnet1D(embed_width, embed_depth, dilation_factor=dilation_factor, reverse_dilation=reverse_dilation, dilation_cycle=dilation_cycle))
             # 2. up-samling
             # - note remapping to output_dim for the last down-sampling layer
             self.model.add(layers.Conv1DTranspose(output_dim if i == (down_depth - 1) else embed_width, self.kernel_size

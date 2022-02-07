@@ -37,10 +37,17 @@ class ResnetConv1DBlock(layers.Layer):
 
 
 class DilatedResnet1D(layers.Layer):
-    def __init__(self, input_dim, depth, dilation_factor=1, reverse_dilation=False, **kwargs):
+    def __init__(self, input_dim, depth, dilation_factor=1, reverse_dilation=False, dilation_cycle=None, **kwargs):
         super(DilatedResnet1D, self).__init__(**kwargs)
+
+        def _get_dilation(cur_depth):
+            if dilation_cycle is None:
+                return dilation_factor ** cur_depth
+            else:
+                return dilation_factor ** (cur_depth % dilation_cycle) # cyclic dilation
         # stack of dilated residual blocks
-        blocks = [ResnetConv1DBlock(input_dim, input_dim, dilation=dilation_factor ** d) for d in range(depth)]
+        # blocks = [ResnetConv1DBlock(input_dim, input_dim, dilation=dilation_factor ** d) for d in range(depth)]
+        blocks = [ResnetConv1DBlock(input_dim, input_dim, dilation=_get_dilation(d)) for d in range(depth)]
 
         # for decoder stack... dilations constracts by a factor of 3 down to 1 at the last block
         if reverse_dilation:

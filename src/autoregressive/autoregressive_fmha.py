@@ -6,6 +6,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from src.transformer.multi_head_attention import positional_encoding, PositionalEmbedding
 from src.transformer.transformer import FactorizedTransformer
+from src.conditioner.conditioners import ConditionerNet
 
 
 class FMHABasedAutoregressiveModel(keras.Model):
@@ -25,8 +26,14 @@ class FMHABasedAutoregressiveModel(keras.Model):
                  attn_stacks=1,
                  maximum_pos_encoding=5000,
                  drop_out_rate=0.1,
-                 context_length=None,  # Almost not needed for vanilla Attention
+                 context_length=None,
+                 zq_shapes=None,  # TODO: move this to upper caller
+                 level=0,
+                 levels=3,
                  pos_emb=True,
+                 downs=None,
+                 strides=None,
+                 cond_kwargs=None,
                  **kwargs):
         super(FMHABasedAutoregressiveModel, self).__init__(**kwargs)
 
@@ -35,6 +42,16 @@ class FMHABasedAutoregressiveModel(keras.Model):
         self.d_model = width
         self.depth = depth
         self.use_pos_embedding = pos_emb
+
+        # Upper Level Conditioning
+        self.level = level
+        self.cond_level = level + 1
+        if cond_kwargs is not None:
+            assert self.cond_level != levels
+            self.conditioner = ConditionerNet(cond_shape=zq_shapes[self.cond_level], bins=self.bins,
+                                              embed_width=self.d_model, # Thus X_COND can combined with X
+                                              down_depth=downs[self.cond_level], stride=strides[self.cond_level],
+                                              **cond_kwargs)
 
         # Start Token
         self.start_token = self.bins - 1  # TODO: temporary, for |zq| == 512, pass in 513
@@ -56,6 +73,7 @@ class FMHABasedAutoregressiveModel(keras.Model):
         # 4. final layer to project to categorical distribution
         self.out = layers.Dense(self.bins)
 
+    @tf.function
     def call(self, x, training=False, x_cond=None):
         """
 
@@ -77,6 +95,12 @@ class FMHABasedAutoregressiveModel(keras.Model):
 
         x = self.dropout(x, training=training)
 
+        # Optional: combine with Upper-level tokens
+        if x_cond is not None:
+            # (B, current_level_seq_len, d_model)
+            print(f"[DEBUG] Combining with Upper Level Tokens!")
+            x += self.conditioner(x_cond, training=training)
+
         x, attention_weights = self.transformer(x, training=training)
 
         # x.shape == (batch_size, target_seq_len, d_model)
@@ -87,15 +111,17 @@ class FMHABasedAutoregressiveModel(keras.Model):
         return final_output, attention_weights
 
     @tf.function
-    def sample(self, n_samples, max_length=None, return_attention_weights=False):
+    def sample(self, n_samples, max_length=None, x_cond=None, return_attention_weights=False):
         """
         TODO: need to support sampling for factorized attention first...
+        :param x_cond:
         :param n_samples:
         :param max_length:
         :param return_attention_weights:
         :return:
         """
         tf.print(f'[DEBUG SAMPLING] Random Gumbel Noise Sample at each step', output_stream=sys.stdout)
+        # tf.print(f'[DEBUG SAMPLING] Random Sample at each step', output_stream=sys.stdout)
         # tf.print(f'[DEBUG SAMPLING] Greedy Sample at each step', output_stream=sys.stdout)
         if max_length is None:
             max_length = self.context_length
@@ -122,7 +148,7 @@ class FMHABasedAutoregressiveModel(keras.Model):
             # Sampling 2: Sample from Categorical distribution
             ##
             # dist = tfp.distributions.Categorical(logits=predictions)
-            # predicted_id = tf.cast(dist.sample(), dtype=tf.int64) # (N, 1)
+            # predicted_id = tf.cast(dist.sample(), dtype=tf.int64) #(N, 1 )
 
             # Sampling 2.5: Gumbel Noise
             dist = tfp.distributions.RelaxedOneHotCategorical(1, logits=predictions)
@@ -132,7 +158,7 @@ class FMHABasedAutoregressiveModel(keras.Model):
 
             # concatentate the predicted_id to the output which is given to the decoder
             # as its input.
-            output_array = output_array.write(i + 1, tf.squeeze(predicted_id, axis=-1)) # (N, )
+            output_array = output_array.write(i + 1, tf.squeeze(predicted_id, axis=-1))  # (N, )
 
             # if predicted_id == end:
             #     break
@@ -173,7 +199,7 @@ class FMHABasedAutoregressiveModel(keras.Model):
             # compute the loss
             # (N, T)
             loss = loss_fn(target, raw_logits)
-            loss = tf.reduce_mean(loss, axis=-1) # (N, )
+            loss = tf.reduce_mean(loss, axis=-1)  # (N, )
             # best_sample_idx = tf.argmin(loss)
             # best_cur_iter_loss = tf.reduce_min(loss)
             # tf.print(f'Best Loss: {best_cur_iter_loss} for Iteration: {i}', output_stream=sys.stdout)
@@ -199,7 +225,8 @@ class FMHABasedAutoregressiveModel(keras.Model):
                     best_cur_sample = sampled_out[cur_idx]
                     y, idx, count = tf.unique_with_counts(best_cur_sample)
                     if tf.reduce_max(count) >= tf.cast(seq_length * token_freq, tf.int32):
-                        tf.print(f'Token {y[tf.argmax(count)]} occurred {tf.reduce_max(count)} Times! Skipping...', output_stream=sys.stdout)
+                        tf.print(f'Token {y[tf.argmax(count)]} occurred {tf.reduce_max(count)} Times! Skipping...',
+                                 output_stream=sys.stdout)
                     else:
                         best_loss = cur_loss
                         best_sample = best_cur_sample
@@ -207,60 +234,84 @@ class FMHABasedAutoregressiveModel(keras.Model):
                 else:
                     break
 
-
         return best_sample, best_loss
-
-
 
 
 if __name__ == '__main__':
     print('Factorized Multi-Head Attention based Autoregressive module!')
 
-    sample_in = tf.random.uniform((32, 16), dtype=tf.int64, minval=0, maxval=200)  # (N, T)
+    # sample_in = tf.random.uniform((32, 16), dtype=tf.int64, minval=0, maxval=200)  # (N, T)
+    #
+    # automha = FMHABasedAutoregressiveModel(context_length=sample_in.shape[1:],
+    #                                        target_vocab_size=512,
+    #                                        width=128,
+    #                                        depth=6,
+    #                                        heads=2,
+    #                                        blocks=4,
+    #                                        attn_stacks=1)
+    # # automha.compile(run_eagerly=True)
+    #
+    # out, attn_w = automha(sample_in, training=False)
+    #
+    # automha.summary()
+    # # print(automha.x_pos_embedding.trainable_variables)
+    #
+    # print("Autoregressive Model Output: ", out.shape)
+    # print("Multi-head Self Attention: ", {k: v.shape for k, v in attn_w.items()})
+    #
+    # for _, v in attn_w.items():
+    #     print(v.numpy()[0][-1])
+    #
+    # # Test Sampling
+    # ## attention weights for the whole sampled batch
+    # print(f"Validate Sampling...")
+    # ## 1. sample_size==1 2. sample_size > 1
+    # sampled_sequence, sample_attn_w = automha.sample(n_samples=4, return_attention_weights=True)
+    #
+    # print(sampled_sequence.shape)
+    # print(sampled_sequence)
+    #
+    # for v, attn in sample_attn_w.items():
+    #     print(v)
+    #     print(attn[0][0])  # (One Head, one sampled
+    #
+    # print(f'Validate Random Search...')
+    # loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
+    #
+    # best_sample, best_loss = automha.random_sample(loss_fn, seq_length=10, iterations=10)
+    #
+    # print(f'Best Sample: {best_sample.shape}, with loss per word: {best_loss}')
+    #
+    # ## Idx Sort + Gather example
+    # b = tf.random.normal([6, 4])
+    # idx = tf.argsort(tf.reduce_sum(b, axis=-1))
+    # tf.gather(b, idx, batch_dims=0)
 
-    automha = FMHABasedAutoregressiveModel(context_length=sample_in.shape[1:],
-                                           target_vocab_size=512,
-                                           width=128,
-                                           depth=6,
-                                           heads=2,
-                                           blocks=4,
-                                           attn_stacks=1)
-    # automha.compile(run_eagerly=True)
+    # Test Conditioning on Upper level codes
+    cur_in = tf.random.uniform((32, 16), dtype=tf.int64, minval=0, maxval=200)  # (N, T)
+    upper_in = tf.random.uniform((32, 4), dtype=tf.int64, minval=0, maxval=200)
+    z_shapes = [cur_in.shape[1:], upper_in.shape[1:]]
 
-    out, attn_w = automha(sample_in, training=False)
+    x_cond_kwargs = dict(dilation_factor=3, dilation_cycle=4, residual_width=32, residual_depth=8)
 
-    automha.summary()
-    # print(automha.x_pos_embedding.trainable_variables)
+    automha_cond = FMHABasedAutoregressiveModel(context_length=cur_in.shape[1:],
+                                                target_vocab_size=512,
+                                                width=128,
+                                                depth=6,
+                                                heads=2,
+                                                blocks=4,
+                                                attn_stacks=1,
+                                                zq_shapes=z_shapes,#[(16,), (4,)],
+                                                level=0,
+                                                levels=2,
+                                                downs=[3, 2],
+                                                strides=[2, 2],
+                                                cond_kwargs=x_cond_kwargs)
 
-    print("Autoregressive Model Output: ", out.shape)
-    print("Multi-head Self Attention: ", {k: v.shape for k, v in attn_w.items()})
+    cond_out = automha_cond.conditioner(upper_in, training=False)
 
-    for _, v in attn_w.items():
-        print(v.numpy()[0][-1])
+    print(f"Conditioner Out Shape: {cond_out.shape}")
 
-    # Test Sampling
-    ## attention weights for the whole sampled batch
-    print(f"Validate Sampling...")
-    ## 1. sample_size==1 2. sample_size > 1
-    sampled_sequence, sample_attn_w = automha.sample(n_samples=4, return_attention_weights=True)
+    out_with_cond, attn_w_cond = automha_cond(cur_in, x_cond=upper_in, training=False)
 
-    print(sampled_sequence.shape)
-    print(sampled_sequence)
-
-    for v, attn in sample_attn_w.items():
-        print(v)
-        print(attn[0][0])  # (One Head, one sampled
-
-    print(f'Validate Random Search...')
-    loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
-
-    best_sample, best_loss = automha.random_sample(loss_fn, seq_length=10, iterations=10)
-
-    print(f'Best Sample: {best_sample.shape}, with loss per word: {best_loss}')
-
-
-    ## Idx Sort + Gather example
-    b = tf.random.normal([6, 4])
-    idx = tf.argsort(tf.reduce_sum(b, axis=-1))
-    tf.gather(b, idx, batch_dims=0)
-
+    print(f"With Conditioning on Upper level tokens output: {out_with_cond.shape}")
