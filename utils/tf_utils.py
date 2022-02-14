@@ -152,6 +152,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
     if if_sample:
         assert prior_model is not None
         print(f"------------------------------- Auto-regressive Sampling in process..........-----------------------------")
+        # TODO: Sample with conditioning on upper-level latent codes
 
         # sampled_codes, sampled_attn_w = prior_model.sample(n_samples=4)
         sampled_codes = prior_model.sample(n_samples=4)

@@ -7,6 +7,7 @@ from tensorflow.keras import layers
 from src.transformer.multi_head_attention import positional_encoding, PositionalEmbedding
 from src.transformer.transformer import FactorizedTransformer
 from src.conditioner.conditioners import ConditionerNet
+from utils.tf_utils import shape_list
 
 
 class FMHABasedAutoregressiveModel(keras.Model):
@@ -44,8 +45,11 @@ class FMHABasedAutoregressiveModel(keras.Model):
         self.use_pos_embedding = pos_emb
 
         # Upper Level Conditioning
+        self.levels = levels
         self.level = level
         self.cond_level = level + 1
+        ## ratio of current_level_ctx/upper_level_ctx
+        self.cond_downsample_rate = strides[self.cond_level] ** downs[self.cond_level] if self.level != levels-1 else None
         if cond_kwargs is not None:
             assert self.cond_level != levels
             self.conditioner = ConditionerNet(cond_shape=zq_shapes[self.cond_level], bins=self.bins,
@@ -73,6 +77,32 @@ class FMHABasedAutoregressiveModel(keras.Model):
         # 4. final layer to project to categorical distribution
         self.out = layers.Dense(self.bins)
 
+    def get_cond(self, zs, start, end):
+        """
+        Retrieve upper-level latent codes (already sampled) matching loc of [start, end) of current level
+        :param zs:
+        :param start:
+        :param end:
+        :return:
+        """
+        if self.level != self.levels - 1:
+            assert self.cond_downsample_rate is not None
+            # Check the sequence length match
+            assert start % self.cond_downsample_rate == end % self.cond_downsample_rate == 0
+            z_cond = zs[self.cond_level][:, start // self.cond_downsample_rate : end // self.cond_downsample_rate]
+            # Assert the shape match
+            _, L = shape_list(z_cond)
+            tf.debugging.assert_equal(
+                L, self.context_length // self.cond_downsample_rate,
+                message="Extracted Upper level codes match the down-sampling rate",
+                summarize=None, name=None
+            )
+        else:
+            z_cond = None
+
+        return z_cond
+
+
     @tf.function
     def call(self, x, training=False, x_cond=None):
         """
@@ -98,8 +128,14 @@ class FMHABasedAutoregressiveModel(keras.Model):
         # Optional: combine with Upper-level tokens
         if x_cond is not None:
             # (B, current_level_seq_len, d_model)
-            print(f"[DEBUG] Combining with Upper Level Tokens!")
-            x += self.conditioner(x_cond, training=training)
+            print(f"[DEBUG] Combining with Upper Level Tokens! {shape_list(x_cond)}")
+            if len(shape_list(x_cond)) == 3:
+                print(f"[DEBUG] No Up-sampling of Upper Level Tokens")
+                # TOBEREMOVED: mostly x_cond already up-sampled during sampling current level
+                x += x_cond
+            else:
+                print(f"[DEBUG] Up Sampling Upper Level Tokens first")
+                x += self.conditioner(x_cond, training=training)
 
         x, attention_weights = self.transformer(x, training=training)
 
@@ -114,7 +150,7 @@ class FMHABasedAutoregressiveModel(keras.Model):
     def sample(self, n_samples, max_length=None, x_cond=None, return_attention_weights=False):
         """
         TODO: need to support sampling for factorized attention first...
-        :param x_cond:
+        :param x_cond: [N, L_upper_down_sampled]
         :param n_samples:
         :param max_length:
         :param return_attention_weights:
@@ -126,6 +162,19 @@ class FMHABasedAutoregressiveModel(keras.Model):
         if max_length is None:
             max_length = self.context_length
 
+        # Conditioned on upper-level codes (same context window accordingly)
+        if x_cond is not None:
+            # (B, current_level_seq_len, d_model)
+            print(f"[Sample DEBUG] Combining with Upper Level Tokens!")
+            x_cond = self.conditioner(x_cond, training=False)
+
+            N, L, D = shape_list(x_cond)
+            tf.debugging.assert_equal(
+                [N, L, D], [n_samples, max_length, self.d_model], message="Conditional Upper Level Codes shape Not Match",
+                summarize=None, name=None
+            )
+
+
         start = tf.constant(self.start_token, dtype=tf.int64, shape=[n_samples, ])
 
         # `tf.TensorArray` is required here (instead of a python list) so that the
@@ -135,8 +184,9 @@ class FMHABasedAutoregressiveModel(keras.Model):
 
         for i in tf.range(max_length):
             output = tf.transpose(output_array.stack())  # (N, i+1); when i==0, start_token at each position
+            cur_x_cond = x_cond[:, :i+1, :] if x_cond is not None else None
             # (N, i+1, D) raw logits; Note that we don't need to do full sequence inference... TODO: improvement
-            predictions, _ = self.call(output, training=False)
+            predictions, _ = self.call(output, training=False, x_cond=cur_x_cond)
 
             # select the last token from the seq_len dimension
             predictions = predictions[:, -1:, :]  # (N, 1, D)
@@ -315,3 +365,17 @@ if __name__ == '__main__':
     out_with_cond, attn_w_cond = automha_cond(cur_in, x_cond=upper_in, training=False)
 
     print(f"With Conditioning on Upper level tokens output: {out_with_cond.shape}")
+
+    # Test Sampling
+    ## attention weights for the whole sampled batch
+    print(f"Validate Sampling...")
+    ## 1. sample_size==1 2. sample_size > 1
+    z_cond = tf.random.uniform((4, 4), dtype=tf.int64, minval=0, maxval=200)
+    sampled_sequence, sample_attn_w = automha_cond.sample(n_samples=4, return_attention_weights=True, x_cond=z_cond)
+
+    print(sampled_sequence.shape, sampled_sequence.dtype)
+    print(sampled_sequence)
+
+    for v, attn in sample_attn_w.items():
+        print(f"-------------{v}-------------")
+        print(attn[0][0])  # (One Head, one sampled

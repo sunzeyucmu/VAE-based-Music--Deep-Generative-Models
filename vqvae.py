@@ -178,6 +178,36 @@ class VQVAE(keras.models.Model):
         # return self.vqvae(x)
         return self.vqvaes[0](x)
 
+    def encode_level(self, x, level, chunk=1):
+        # ze: (N, T_downsampled, C)
+        enc_outputs = self.encoders[level](x, training=False)
+        latent_dim = tf.shape(enc_outputs)[-1]
+        # print(enc_outputs.shape)
+        # latent_output, latent_codes = vqvae.vqs[level](tf.reshape(enc_outputs, [-1, latent_dim]), training=False)
+        latent_output, latent_codes = self.vqs[level](enc_outputs, training=False)
+        # print(latent_output.shape, latent_codes.shape)
+        # zq: (N, T_downsampled)
+        latent_codes = tf.reshape(latent_codes, tf.shape(enc_outputs)[:-1])
+        # print(latent_codes.shape, latent_codes.dtype)
+        return latent_codes
+
+    def encode(self, x, start_level=0, end_level=None):
+        """
+
+        :param x:
+        :param start_level:
+        :param end_level:
+        :return: list of encoded ZQs for each level [start_level, end_level)
+        """
+        if end_level is None:
+            end_level = self.levels
+
+        zs = []
+        for i in range(start_level, end_level):
+            zs.append(self.encode_level(x, i))
+
+        return zs
+
     def decode_level(self, zq, level, chunk=1):
         """
 
