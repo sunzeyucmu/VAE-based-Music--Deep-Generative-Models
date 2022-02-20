@@ -79,7 +79,7 @@ class ConditionerNet(layers.Layer):
         )
 
         # return self.model(inputs)
-        out = self.model(inputs)
+        out = self.model(inputs, )
 
         ## Assert Up-sampling
         _, L_out, _ = shape_list(out)

@@ -13,7 +13,7 @@ SAMPLE_RATE = 3000
 GENRES = {'metal': 0, 'disco': 1, 'classical': 2, 'rock': 3, 'jazz': 4,
           'country': 5, 'pop': 6, 'blues': 7, 'reggae': 8, 'hiphop': 9}
 
-idx_to_genres = {v: k for (k, v) in GENRES.items()}
+IDX_TO_GENRES = {v: k for (k, v) in GENRES.items()}
 
 # TODO: hyper-parm this...
 STFT_ARGS = [(2048, 1024, 512),  # n_fft
@@ -206,7 +206,7 @@ def read_data(src_dir, genres, test_data_percentage=0.1, sample_rate=22050, dura
     return X_train, y_train, y_file_train, X_test, y_test, y_file_test
 
 
-def generate_genre_samples(X, y):
+def generate_genre_samples(X, y, return_genre=False):
     """
 
     :param y:
@@ -220,17 +220,22 @@ def generate_genre_samples(X, y):
     print(generes_train_idx)
 
     train_samples = []
+    train_labels = []
 
     for i in range(len(np.unique(y))):
         train_samples.append(X[int(generes_train_idx[i][0])])
         # Quantization Version
         # train_samples.append(X_train_Q[int(generes_train_idx[i][0])])
+        train_labels.append(i)
 
     # Numpy Array
     train_samples = np.stack(train_samples, axis=0)
     print(train_samples.shape, train_samples[0])
 
-    return train_samples
+    if return_genre:
+        return (train_samples, np.array(train_labels))
+    else:
+        return train_samples
 
 
 if __name__ == '__main__':

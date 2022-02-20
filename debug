@@ -1,6 +1,48 @@
 python jukebox/train.py --hps=small_vqvae,small_prior,all_fp16,cpu_ema --name=small_prior --sample_length=2097152 --bs=4  --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=1 --weight_decay=0.01 --save_iters=1000
 
+python jukebox/train.py --hps=small_vqvae,small_upsampler,all_fp16,cpu_ema --name=small_upsampler --sample_length=262144 --bs=4 --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=0 --weight_decay=0.01 --save_iters=1000
+
+
+mpiexec -n 1 python jukebox/train.py --hps=small_vqvae,small_upsampler,all_fp16,cpu_ema --name=small_upsampler --sample_length=262144 --bs=4 --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=0 --weight_decay=0.01 --save_iters=1000 --audio_files_dir="C:\Users\Zeyu Sun\GENERATIVE_DATA\GTZAN\genres_original\classical"
+
+## Colab
+mpiexec -n 1 python jukebox/train.py --hps=small_vqvae,small_upsampler,all_fp16,cpu_ema --name=small_upsampler --sample_length=262144 --bs=4 --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=0 --weight_decay=0.01 --save_iters=1000 --audio_files_dir=/content/drive/MyDrive/GTZAN/genres_original --restore_vqvae=logs/small_vqvae/checkpoint_step_32001.pth.tar 
+
+
+mpiexec -n 1 python jukebox/train.py --hps=small_vqvae --name=small_vqvae --sample_length=262144 --bs=4 --audio_files_dir=/content/drive/MyDrive/GTZAN/genres_original --labels=False --train --aug_shift --aug_blend --save_iters=1000 
+
+mpiexec -n 1 python jukebox/train.py --hps=small_vqvae --name=small_vqvae --sample_length=262144 --bs=4 --audio_files_dir=/content/drive/MyDrive/GTZAN/genres_original --labels=False --train --aug_shift --aug_blend --save_iters=1000 --restore_vqvae=logs/small_vqvae/checkpoint_<latest>.pth.tar
+
 
 ## Sample Processing
 
 python jukebox/sample.py --model=5b_lyrics --name=sample_1b --levels=3 --sample_length_in_seconds=20 --total_sample_length_in_seconds=180 --sr=44100 --n_samples=6 --hop_fraction=0.5,0.5,0.125
+
+
+
+### Train with labels
+To train with you own metadata for your audio files, implement get_metadata in data/files_dataset.py to return the artist, genre and lyrics for a given audio file
+
+
+tensorboard --logdir colab_storage/TF_LOGS/logs
+
+
+
+
+
+pip install --upgrade jupyter_http_over_ws>=0.0.7 &&  jupyter serverextension enable --py jupyter_http_over_ws
+
+conda install -y -c conda-forge tensorboard
+
+
+
+## LINUX
+
+
+$ sudo lsof -i -P -n | grep LISTEN
+kill -SIGKILL <pid>
+
+
+>>>Get the running tensorboard process details
+
+ps -ef|grep tensorboard

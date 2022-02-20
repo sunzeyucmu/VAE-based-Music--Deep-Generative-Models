@@ -50,8 +50,10 @@ class FMHABasedAutoregressiveModel(keras.Model):
         self.cond_level = level + 1
         ## ratio of current_level_ctx/upper_level_ctx
         self.cond_downsample_rate = strides[self.cond_level] ** downs[self.cond_level] if self.level != levels-1 else None
-        if cond_kwargs is not None:
-            assert self.cond_level != levels
+        # if cond_kwargs is not None:
+        #     assert self.cond_level != levels
+        if self.cond_level != levels:
+            assert cond_kwargs is not None
             self.conditioner = ConditionerNet(cond_shape=zq_shapes[self.cond_level], bins=self.bins,
                                               embed_width=self.d_model, # Thus X_COND can combined with X
                                               down_depth=downs[self.cond_level], stride=strides[self.cond_level],
@@ -103,8 +105,8 @@ class FMHABasedAutoregressiveModel(keras.Model):
         return z_cond
 
 
-    @tf.function
-    def call(self, x, training=False, x_cond=None):
+    # @tf.function
+    def call(self, x, training=False, x_cond=None, y_cond=None):
         """
 
         :param x: (N, T) for audio latent code (T already compressed...)
@@ -115,6 +117,17 @@ class FMHABasedAutoregressiveModel(keras.Model):
         seq_len = tf.shape(x)[1]
 
         x = self.x_embedding(x)  # (batch_size, target_seq_len, d_model)
+        if y_cond is not None:
+            tf.debugging.assert_equal(
+                shape_list(y_cond), [shape_list(x)[0], 1, self.d_model],
+                message=f"Genre Embedding Shape Not matching expectation: {shape_list(y_cond)}, Not able to prepend to the head of z1_T tokens embeddings",
+                summarize=None, name=None
+            )
+            # $$$ Replace current start token!
+            print(f"[DEBUG] Replacing Start Token with Label Embeddings....")
+            # x[:, 0:1, :] = y_cond
+            x = tf.concat([y_cond, x[:, 1:, :]], axis=1)
+
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
 
         # x += self.x_pos_embedding.get_embeddings(seq_len) # (1, seq_len, d_model)
@@ -147,9 +160,10 @@ class FMHABasedAutoregressiveModel(keras.Model):
         return final_output, attention_weights
 
     @tf.function
-    def sample(self, n_samples, max_length=None, x_cond=None, return_attention_weights=False):
+    def sample(self, n_samples, max_length=None, x_cond=None, y_cond=None, return_attention_weights=False):
         """
         TODO: need to support sampling for factorized attention first...
+        :param y_cond: Label Embeddings
         :param x_cond: [N, L_upper_down_sampled]
         :param n_samples:
         :param max_length:
@@ -186,7 +200,7 @@ class FMHABasedAutoregressiveModel(keras.Model):
             output = tf.transpose(output_array.stack())  # (N, i+1); when i==0, start_token at each position
             cur_x_cond = x_cond[:, :i+1, :] if x_cond is not None else None
             # (N, i+1, D) raw logits; Note that we don't need to do full sequence inference... TODO: improvement
-            predictions, _ = self.call(output, training=False, x_cond=cur_x_cond)
+            predictions, _ = self.call(output, training=False, x_cond=cur_x_cond, y_cond=y_cond)
 
             # select the last token from the seq_len dimension
             predictions = predictions[:, -1:, :]  # (N, 1, D)
@@ -220,12 +234,13 @@ class FMHABasedAutoregressiveModel(keras.Model):
         # calculated on the last iteration of the loop. So recalculate them outside
         # the loop.
         if return_attention_weights:
-            _, attention_weights = self.call(output[:, :-1], training=False)
+            _, attention_weights = self.call(output[:, :-1], training=False, x_cond=x_cond, y_cond=y_cond)
             return output, attention_weights
 
         return output
 
     def random_sample(self, loss_fn, seq_length=None, iterations=10, batch_per_iter=4, token_freq=0.50):
+        # TODO: Support of Sampling with Upper level tokens (if any)
         """
         Random Search
         :param loss_fn:
@@ -379,3 +394,8 @@ if __name__ == '__main__':
     for v, attn in sample_attn_w.items():
         print(f"-------------{v}-------------")
         print(attn[0][0])  # (One Head, one sampled
+
+    print(f"With Conditioning on Labels")
+    y_cond = tf.random.normal((4, 1, 128))
+    sampled_sequence_ycond, sample_attn_w_ycond = automha_cond.sample(n_samples=4, return_attention_weights=True, x_cond=z_cond, y_cond=y_cond)
+    print(sampled_sequence_ycond)

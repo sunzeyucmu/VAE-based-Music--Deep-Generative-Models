@@ -3,7 +3,7 @@ import librosa
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from data_utils import SAMPLE_RATE, idx_to_genres
+from data_utils import SAMPLE_RATE, IDX_TO_GENRES
 
 
 def compare_t(t1, t2):
@@ -91,7 +91,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
         sum([np.prod(var.numpy().shape) for var in model.vqvaes[level].trainable_variables])))
 
     # Direct Reconstruction (x -> x')
-    input = test_sample
+    input = test_sample[0] if isinstance(test_sample, tuple) else test_sample
     if channel_last:
         input = np.transpose(test_sample, [0, 2, 1])
     predictions = model.vqvaes[level](input, training=False).numpy()
@@ -118,7 +118,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
             print(f"X range: [{np.amax(waves)}, {np.amin(waves)}]")
 
         librosa.display.waveplot(waves.squeeze(), sr=SAMPLE_RATE)
-        plt.title(f"WavePlot - {idx_to_genres[i]}")
+        plt.title(f"WavePlot - {IDX_TO_GENRES[i]}")
         # plt.tight_layout()
         ret.append(predictions[i])
 
@@ -143,7 +143,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
                 print(f"X range: [{np.amax(waves)}, {np.amin(waves)}]")
 
             librosa.display.waveplot(waves.squeeze(), sr=SAMPLE_RATE)
-            plt.title(f"WavePlot - {idx_to_genres[i]}")
+            plt.title(f"WavePlot - {IDX_TO_GENRES[i]}")
             # # plt.tight_layout()
             # ret.append(predictions[i])
 
@@ -152,12 +152,14 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
     if if_sample:
         assert prior_model is not None
         print(f"------------------------------- Auto-regressive Sampling in process..........-----------------------------")
-        # TODO: Sample with conditioning on upper-level latent codes
 
         # sampled_codes, sampled_attn_w = prior_model.sample(n_samples=4)
-        sampled_codes = prior_model.sample(n_samples=4)
+        # TODO: Sample with conditioning on upper-level latent codes
 
-        print(f"Sampled output shape: {tf.shape(sampled_codes)} (with Start Token...)")
+        sample_labels = [*IDX_TO_GENRES.keys()]
+        sampled_codes = prior_model.sample(n_samples=len(sample_labels), y=tf.constant(sample_labels))
+
+        print(f"Sampled output shape: {tf.shape(sampled_codes)}, with start token: {sampled_codes[:, 0]}")
         print(sampled_codes)
 
         # remove the start token
@@ -166,22 +168,24 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
 
         print("-------------------------------- Reconstruction from Prior Sampling (non-prime)... --------------------------")
 
-        fig = plt.figure(figsize=(18, 6))
+        fig = plt.figure(figsize=(18, 12))
 
         for i in range(sampled_recons.shape[0]):
             waves = sampled_recons[i]
-            plt.subplot(1, 4, i + 1)
+            plt.subplot(4, 3, i + 1)
 
             if i == 3:
                 print("X': ", waves.squeeze())
                 print(f"X range: [{np.amax(waves)}, {np.amin(waves)}]")
 
             librosa.display.waveplot(waves.squeeze(), sr=SAMPLE_RATE)
-            plt.title(f"WavePlot - {idx_to_genres[i]}")
+            plt.title(f"WavePlot - {IDX_TO_GENRES[sample_labels[i]]}")
             # # plt.tight_layout()
             # ret.append(predictions[i])
 
         plt.show()
+
+        return sampled_recons
 
     return ret
 
@@ -208,7 +212,7 @@ def decode_latent(model, sampled_codes, level):
             print(f"X range: [{np.amax(waves)}, {np.amin(waves)}]")
 
         librosa.display.waveplot(waves.squeeze(), sr=SAMPLE_RATE)
-        plt.title(f"WavePlot - {idx_to_genres[i]}")
+        plt.title(f"WavePlot - {IDX_TO_GENRES[i]}")
 
     plt.show()
 
