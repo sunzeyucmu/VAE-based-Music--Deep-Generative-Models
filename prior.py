@@ -10,93 +10,93 @@ from vqvae import VQVAE
 from utils import tf_utils
 
 
-class PriorMonitor(tf.keras.callbacks.Callback):
-    """A callback to generate and save images after each epoch"""
-
-    def __init__(self, test_dataset, train_samples, test_samples, ckpt_manager, val_interval=10, sample_interval=50,
-                 ckpt_interval=20, **kwargs):
-        super(PriorMonitor, self).__init__(**kwargs)
-        self.val_interval = val_interval
-        self.sample_interval = sample_interval
-        self.val_dataset = test_dataset
-        self.train_samples = train_samples
-        self.test_samples = test_samples
-        self.ckpt_manager = ckpt_manager
-        self.ckpt_interval = ckpt_interval
-
-    def on_epoch_end(self, epoch, logs=None):
-        if epoch % self.ckpt_interval == 0:
-            ckpt_save_path = self.ckpt_manager.save()
-            print(f'\nSaving checkpoint for epoch {epoch + 1} at {ckpt_save_path}\n')
-
-        # Periodic Inspect
-        if epoch % self.val_interval == 0:
-            # Reset the metrics!!!
-            print("\nResetting the metrics...")
-            for m in self.model.metrics:
-                m.reset_state()
-
-            print("\n[DEBUG] This is Callback Monitor: End of Epoch", epoch)
-            print("---------------------------Running Validation DataSet---------------------------")
-            self.model.evaluate(self.val_dataset)
-
-            print(
-                f"-------------------------------------Validate Test Samples Performance------------------------------------------")
-            if isinstance(self.test_samples, tuple):
-                print(f'---------Labels provided for Test Samples: {self.test_samples[1]}')
-
-            pred_logits_test, target_test, attn_weights_test, loss_test, accuracy_test = self.model(self.test_samples)
-
-            print(
-                f'Testing Samples Loss {loss_test:.4f}; Perplexity (exp of loss_per_word): {tf.math.exp(loss_test):.5f}; Accuracy {accuracy_test:.4f}')
-            print(">>>>>>>>>>> Top 100 of Test Target: ", target_test[0][:100])
-            print(">>>>>>>>>>> Top 100 of Test Preds: ", tf.argmax(pred_logits_test, axis=2)[0][:100])
-
-            for k, v in attn_weights_test.items():
-                print(k)
-                print(v.shape)
-                tf_utils.plot_attention_weights(v[0])
-
-            tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.test_samples, level=self.model.level,
-                                             if_decode=True,
-                                             latent_code=tf.argmax(pred_logits_test, axis=-1), if_sample=False)
-
-            # Training Samples
-            print(
-                f"-------------------------------------Validate Training Samples Performance--------------------------------------")
-            if isinstance(self.train_samples, tuple):
-                print(f'---------Labels provided for Test Samples: {self.train_samples[1]}')
-
-            pred_logits, target, attn_weights, loss, accuracy = self.model(self.train_samples)
-
-            print(
-                f'Training Samples Loss {loss:.4f}; Perplexity (exp of loss_per_word): {tf.math.exp(loss):.5f}; Accuracy {accuracy:.4f}')
-            print(">>>>>>>>>>> Top 100 of Train Target: ", target[0][:100])
-            print(">>>>>>>>>>> Top 100 of Train Preds: ", tf.argmax(pred_logits, axis=2)[0][:100])
-
-            # Plot Attentions
-            for k, v in attn_weights.items():
-                print(k)
-                print(v.shape)
-                tf_utils.plot_attention_weights(v[0])
-
-            # tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.train_samples, level=self.model.level, if_decode=True,
-            #                                  latent_code=tf.argmax(pred_logits, axis=-1), if_sample=False)
-
-            # Greedy Sampling also
-            if epoch % self.sample_interval == 0:
-                # if epoch+1 % 100 ==0:
-                # Sampling is a bit costy....
-                tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.train_samples, level=self.model.level,
-                                                 if_decode=True,
-                                                 latent_code=tf.argmax(pred_logits, axis=-1), if_sample=True,
-                                                 prior_model=self.model)
-            else:
-                tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.train_samples, level=self.model.level,
-                                                 if_decode=True,
-                                                 latent_code=tf.argmax(pred_logits, axis=-1), if_sample=False)
-
-            return pred_logits, attn_weights
+# class PriorMonitor(tf.keras.callbacks.Callback):
+#     """A callback to generate and save images after each epoch"""
+#
+#     def __init__(self, test_dataset, train_samples, test_samples, ckpt_manager, val_interval=10, sample_interval=50,
+#                  ckpt_interval=20, **kwargs):
+#         super(PriorMonitor, self).__init__(**kwargs)
+#         self.val_interval = val_interval
+#         self.sample_interval = sample_interval
+#         self.val_dataset = test_dataset
+#         self.train_samples = train_samples
+#         self.test_samples = test_samples
+#         self.ckpt_manager = ckpt_manager
+#         self.ckpt_interval = ckpt_interval
+#
+#     def on_epoch_end(self, epoch, logs=None):
+#         if epoch % self.ckpt_interval == 0:
+#             ckpt_save_path = self.ckpt_manager.save()
+#             print(f'\nSaving checkpoint for epoch {epoch + 1} at {ckpt_save_path}\n')
+#
+#         # Periodic Inspect
+#         if epoch % self.val_interval == 0:
+#             # Reset the metrics!!!
+#             print("\nResetting the metrics...")
+#             for m in self.model.metrics:
+#                 m.reset_state()
+#
+#             print("\n[DEBUG] This is Callback Monitor: End of Epoch", epoch)
+#             print("---------------------------Running Validation DataSet---------------------------")
+#             self.model.evaluate(self.val_dataset)
+#
+#             print(
+#                 f"-------------------------------------Validate Test Samples Performance------------------------------------------")
+#             if isinstance(self.test_samples, tuple):
+#                 print(f'---------Labels provided for Test Samples: {self.test_samples[1]}')
+#
+#             pred_logits_test, target_test, attn_weights_test, loss_test, accuracy_test = self.model(self.test_samples)
+#
+#             print(
+#                 f'Testing Samples Loss {loss_test:.4f}; Perplexity (exp of loss_per_word): {tf.math.exp(loss_test):.5f}; Accuracy {accuracy_test:.4f}')
+#             print(">>>>>>>>>>> Top 100 of Test Target: ", target_test[0][:100])
+#             print(">>>>>>>>>>> Top 100 of Test Preds: ", tf.argmax(pred_logits_test, axis=2)[0][:100])
+#
+#             for k, v in attn_weights_test.items():
+#                 print(k)
+#                 print(v.shape)
+#                 tf_utils.plot_attention_weights(v[0])
+#
+#             tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.test_samples, level=self.model.level,
+#                                              if_decode=True,
+#                                              latent_code=tf.argmax(pred_logits_test, axis=-1), if_sample=False)
+#
+#             # Training Samples
+#             print(
+#                 f"-------------------------------------Validate Training Samples Performance--------------------------------------")
+#             if isinstance(self.train_samples, tuple):
+#                 print(f'---------Labels provided for Test Samples: {self.train_samples[1]}')
+#
+#             pred_logits, target, attn_weights, loss, accuracy = self.model(self.train_samples)
+#
+#             print(
+#                 f'Training Samples Loss {loss:.4f}; Perplexity (exp of loss_per_word): {tf.math.exp(loss):.5f}; Accuracy {accuracy:.4f}')
+#             print(">>>>>>>>>>> Top 100 of Train Target: ", target[0][:100])
+#             print(">>>>>>>>>>> Top 100 of Train Preds: ", tf.argmax(pred_logits, axis=2)[0][:100])
+#
+#             # Plot Attentions
+#             for k, v in attn_weights.items():
+#                 print(k)
+#                 print(v.shape)
+#                 tf_utils.plot_attention_weights(v[0])
+#
+#             # tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.train_samples, level=self.model.level, if_decode=True,
+#             #                                  latent_code=tf.argmax(pred_logits, axis=-1), if_sample=False)
+#
+#             # Greedy Sampling also
+#             if epoch % self.sample_interval == 0:
+#                 # if epoch+1 % 100 ==0:
+#                 # Sampling is a bit costy....
+#                 tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.train_samples, level=self.model.level,
+#                                                  if_decode=True,
+#                                                  latent_code=tf.argmax(pred_logits, axis=-1), if_sample=True,
+#                                                  prior_model=self.model)
+#             else:
+#                 tf_utils.generate_and_save_waves(self.model.vqvae, 0, self.train_samples, level=self.model.level,
+#                                                  if_decode=True,
+#                                                  latent_code=tf.argmax(pred_logits, axis=-1), if_sample=False)
+#
+#             return pred_logits, attn_weights
 
 
 class Prior(keras.Model):
@@ -109,6 +109,7 @@ class Prior(keras.Model):
                  vqvae_model,
                  prior_kwargs,
                  x_cond_kwargs,
+                 prior_monitor=None,
                  genre_classes=None,
                  **kwargs):
         """
@@ -125,6 +126,7 @@ class Prior(keras.Model):
         self.z_shapes = z_shapes
         self.levels = len(z_shapes)
         self.z_shape = z_shapes[level]
+        self.context_length = tf.reduce_prod(self.z_shape) # (T, 1) -> T
         self.bins = bins
         self.genre_bins = genre_classes
 
@@ -164,6 +166,10 @@ class Prior(keras.Model):
         self.train_accuracy_tracker = tf.keras.metrics.Mean(name='train_accuracy')
         ## TODO: perplexity
 
+        # CallBack Monitor... TODO: Move this to a fully customized trainer function
+        self.train_monitor = prior_monitor
+        # self.iters = 0
+
     @property
     def metrics(self):
         return [
@@ -176,6 +182,20 @@ class Prior(keras.Model):
 
     def decode(self, zs, start_level, end_level):
         return NotImplementedError
+
+    def get_cond(self, zs, start, end):
+        """
+        Retrieve upper-level latent codes (already sampled) matching loc of [start, end) of current level
+        :param zs:
+        :param start:
+        :param end:
+        :return:
+        """
+        # TODO: move the upper level conditioning to Prior module
+        return self.prior.get_cond(zs, start, end)
+
+    def set_train_monitor(self, train_monitor):
+        self.train_monitor = train_monitor
 
     def call(self, inputs):
         """
@@ -265,6 +285,29 @@ class Prior(keras.Model):
 
         self.train_loss_tracker(loss)
         self.train_accuracy_tracker(accuracy_function(target, pred_logits))
+
+        """
+        Logging to Tensorboard, note this is EXPENSIVE!!!
+        """
+        if self.train_monitor is not None:
+            with self.train_monitor.summary_writer.as_default():
+                # Log the weights and gradients
+                for var, grad in zip(variables, gradients):
+                    tf.summary.histogram(name=f"[grad]{var.name}", data=grad, step=tf.summary.experimental.get_step()) #, step=self.iters) #step=self.train_monitor.step)
+                    tf.summary.histogram(name=var.name, data=var,
+                                         step=tf.summary.experimental.get_step())  # , step=self.iters) #step=self.train_monitor.step)
+
+                # Log Only the Transformer's weights
+                # for var in self.prior.transformer.trainable_variables:
+                #     tf.summary.histogram(name=var.name, data=var, step=tf.summary.experimental.get_step()) #, step=self.iters) #step=self.train_monitor.step)
+
+        # # Log the weights and gradients
+        # for var, grad in zip(variables, gradients):
+        #     tf.summary.histogram(name=f"[grad]{var.name}", data=grad)
+        #
+        # # Log Only the Transformer's weights
+        # for var in self.prior.transformer.trainable_variables:
+        #     tf.summary.histogram(name=var.name, data=var)
 
         # return attn_weights
         return {

@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -67,7 +68,7 @@ class PositionalEmbedding(layers.Layer):
             ),
             trainable=True,
             name="positional_embedding",
-        ) # The Model Weights
+        )  # The Model Weights
 
     def call(self, inputs, **kwargs):
         seq_len = tf.shape(inputs)[1]
@@ -78,21 +79,26 @@ class PositionalEmbedding(layers.Layer):
         return pos_embeddings
 
 
-
 class CustomSchedule(keras.optimizers.schedules.LearningRateSchedule):
-  def __init__(self, d_model, warmup_steps=4000):
-    super(CustomSchedule, self).__init__()
+    def __init__(self, d_model, warmup_steps=4000):
+        super(CustomSchedule, self).__init__()
 
-    self.d_model = d_model
-    self.d_model = tf.cast(self.d_model, tf.float32)
+        self.d_model = d_model
+        self.d_model = tf.cast(self.d_model, tf.float32)
 
-    self.warmup_steps = warmup_steps
+        self.warmup_steps = warmup_steps
 
-  def __call__(self, step):
-    arg1 = tf.math.rsqrt(step)
-    arg2 = step * (self.warmup_steps ** -1.5)
+    def __call__(self, step):
+        # tf.print(f'[DEBUG] LR Schedule: Step: {step}')
+        arg1 = tf.math.rsqrt(step)
+        arg2 = step * (self.warmup_steps ** -1.5)
 
-    return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+        # lr = tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+        #
+        # # if tf.equal(tf.rank(step), tf.constant(0)):
+        # tf.summary.scalar('lr', data=lr, step=tf.cast(step, tf.int64))
+
+        return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
 
 
 if __name__ == '__main__':

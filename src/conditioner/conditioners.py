@@ -97,7 +97,7 @@ if __name__ == '__main__':
     # inputs = tf.random.normal([32, 128, 4])
     inputs = tf.random.normal([32, 128])
 
-    conditioner = ConditionerNet(inputs.shape[1:], 100, 64, 32, 8, down_depth=3, stride=2, dilation_factor=3, dilation_cycle=4)
+    conditioner = ConditionerNet(inputs.shape[1:], 100, 64, residual_width=32, residual_depth=8, down_depth=3, stride=2, dilation_factor=3, dilation_cycle=4)
 
     outputs = conditioner(inputs)
     print(f"Out Shape: {outputs.shape}")

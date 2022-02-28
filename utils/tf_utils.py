@@ -73,9 +73,11 @@ def plot_attention_weights(attention_heads, name="MultiHeadAttention", sentence=
 '''
 
 
-def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False, latent_code=None, if_sample=False, prior_model=None,
+def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False, latent_code=None, if_sample=False,
+                            sample_mode=0, prior_model=None,
                             if_quantized=False, channel_last=False,
-                            print_codebook_distribution=False):
+                            print_codebook_distribution=False,
+                            sampler=None):
     # Codebook Vector usage (Put ahead reconstruction, given that vq preserve the last N_t for now)
     if print_codebook_distribution:
         vq_usage = model.get_quantizer().get_usage_count()
@@ -149,21 +151,57 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
 
         plt.show()
 
+        ret = recons
+
     if if_sample:
-        assert prior_model is not None
+        assert prior_model is not None or sampler is not None
         print(f"------------------------------- Auto-regressive Sampling in process..........-----------------------------")
 
         # sampled_codes, sampled_attn_w = prior_model.sample(n_samples=4)
         # TODO: Sample with conditioning on upper-level latent codes
 
-        sample_labels = [*IDX_TO_GENRES.keys()]
-        sampled_codes = prior_model.sample(n_samples=len(sample_labels), y=tf.constant(sample_labels))
+        # sample_labels = [*IDX_TO_GENRES.keys()]
+
+        assert isinstance(test_sample, tuple)
+        sample_labels = test_sample[1]
+        latent_codes_upper = None
+
+        if sample_mode == 0:
+            print(f"--------------[V0] Sampling with Ground-Truth Upper level decoded tokens")
+            _, *latent_codes_cond = prior_model.vqvae.encode(test_sample[0], start_level=prior_model.level, end_level=prior_model.levels)
+            latent_codes_upper = latent_codes_cond[0] if prior_model.level != prior_model.levels - 1 else None
+            if latent_codes_upper is not None:
+                print(f'[DEBUG] Shape of Upper Latent Codes: {latent_codes_upper.numpy().shape}')
+
+            sampled_codes = prior_model.sample(n_samples=len(sample_labels), y=tf.constant(sample_labels),
+                                               z_cond=latent_codes_upper)
+
+        elif sample_mode == 1:
+            print(f"--------------[V1] Single Level Sampling")
+            sampled_codes = prior_model.sample(n_samples=len(sample_labels), y=tf.constant(sample_labels),
+                                               z_cond=None)
+
+        elif sample_mode == 2:
+            print(f"--------------[V2] Full Levels Sampling")
+            assert sampler is not None
+            assert len(sampler.priors) == len(model.vqvaes)
+
+            sampled_codes_all_levels = sampler.sample(n_samples=len(sample_labels), y_genre=tf.constant(sample_labels))
+            sampled_codes = sampled_codes_all_levels[level]
+
+
+        # sampled_codes = prior_model.sample(n_samples=len(sample_labels), y=tf.constant(sample_labels), z_cond=latent_codes_upper)
 
         print(f"Sampled output shape: {tf.shape(sampled_codes)}, with start token: {sampled_codes[:, 0]}")
-        print(sampled_codes)
+        if np.sum(model.num_embeddings*np.ones_like(sampled_codes[:, 0].numpy()) == sampled_codes[:, 0].numpy()) == len(sampled_codes):
+            print("Remove Start token...")
+            sampled_codes = sampled_codes[:, 1:]
 
-        # remove the start token
-        sampled_recons = model.decode(sampled_codes[:, 1:], level=level).numpy()
+        print(sampled_codes, sampled_codes.shape)
+
+        # # remove the start token
+        # sampled_recons = model.decode(sampled_codes[:, 1:], level=level).numpy()
+        sampled_recons = model.decode(sampled_codes, level=level).numpy()
         print(sampled_recons.shape)
 
         print("-------------------------------- Reconstruction from Prior Sampling (non-prime)... --------------------------")
@@ -185,7 +223,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
 
         plt.show()
 
-        return sampled_recons
+        return sampled_recons, sampled_codes
 
     return ret
 

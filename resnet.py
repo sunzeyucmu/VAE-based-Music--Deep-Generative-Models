@@ -11,6 +11,7 @@ class ResnetConv1DBlock(layers.Layer):
         self.model = keras.Sequential([
             layers.ReLU(),
             layers.Conv1D(filters, 3, dilation_rate=dilation, padding="same",
+                          # TODO: duplicated name for multiple RES block
                           name="dilated_cov1d_dr-{}".format(dilation)),
             layers.ReLU(),
             layers.Conv1D(input_dim, 3, dilation_rate=1, padding="same")

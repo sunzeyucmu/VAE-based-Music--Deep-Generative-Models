@@ -6,7 +6,9 @@ python jukebox/train.py --hps=small_vqvae,small_upsampler,all_fp16,cpu_ema --nam
 mpiexec -n 1 python jukebox/train.py --hps=small_vqvae,small_upsampler,all_fp16,cpu_ema --name=small_upsampler --sample_length=262144 --bs=4 --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=0 --weight_decay=0.01 --save_iters=1000 --audio_files_dir="C:\Users\Zeyu Sun\GENERATIVE_DATA\GTZAN\genres_original\classical"
 
 ## Colab
-mpiexec -n 1 python jukebox/train.py --hps=small_vqvae,small_upsampler,all_fp16,cpu_ema --name=small_upsampler --sample_length=262144 --bs=4 --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=0 --weight_decay=0.01 --save_iters=1000 --audio_files_dir=/content/drive/MyDrive/GTZAN/genres_original --restore_vqvae=logs/small_vqvae/checkpoint_step_32001.pth.tar 
+mpiexec -n 1 python jukebox/train.py --hps=small_vqvae,small_upsampler,all_fp16,cpu_ema --name=small_upsampler --sample_length=262144 --bs=4 --labels=False --train --test --aug_shift --aug_blend --prior --levels=2 --level=0 --weight_decay=0.01 --save_iters=1000 --audio_files_dir=/content/drive/MyDrive/GTZAN/genres_original --restore_vqvae=logs/small_vqvae/checkpoint_step_32001.pth.tar --restore_prior=logs/small_upsampler/checkpoint_latest.pth.tar
+
+mpiexec -n 1 python jukebox/train.py --hps=small_vqvae,small_prior,all_fp16,cpu_ema --name=small_prior --sample_length=2097152 --bs=4 --audio_files_dir=/content/drive/MyDrive/GTZAN/genres_original --labels=False --train --test --aug_shift --aug_blend --restore_vqvae=logs/small_vqvae/checkpoint_step_32001.pth.tar --prior --levels=2 --level=1 --weight_decay=0.01 --save_iters=1000
 
 
 mpiexec -n 1 python jukebox/train.py --hps=small_vqvae --name=small_vqvae --sample_length=262144 --bs=4 --audio_files_dir=/content/drive/MyDrive/GTZAN/genres_original --labels=False --train --aug_shift --aug_blend --save_iters=1000 
@@ -23,8 +25,6 @@ python jukebox/sample.py --model=5b_lyrics --name=sample_1b --levels=3 --sample_
 ### Train with labels
 To train with you own metadata for your audio files, implement get_metadata in data/files_dataset.py to return the artist, genre and lyrics for a given audio file
 
-
-tensorboard --logdir colab_storage/TF_LOGS/logs
 
 
 
@@ -46,3 +46,22 @@ kill -SIGKILL <pid>
 >>>Get the running tensorboard process details
 
 ps -ef|grep tensorboard
+
+
+
+[WIP] VAE based Deep Generative Model for Music
+
+
+
+- Still working in progress, currently already built up the overall skeletons (VAE, prior, trainer, sampler...)
+- TF2.0 + Keras
+- Model structure mainly based on OpenAI's jukebox(spare transformer as a core building block) and Google DeepMind's WaveNet
+
+
+### Tensorboard
+
+tensorboard --logdir colab_storage/TF_LOGS/logs
+
+tensorboard --logdir "HEADS=4_WIDTH=256_DEPTH=18_BLOCKS=_11_DROPOUT_0.1"
+
+tensorboard --logdir "HEADS=4_WIDTH=256_DEPTH=18_BLOCKS=_55_DROPOUT_0.1"
