@@ -99,8 +99,8 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
     predictions = model.vqvaes[level](input, training=False).numpy()
     print("Reconstructed Output: ", predictions.shape)
     fig = plt.figure(figsize=(18, 12))
-    ret = []
-
+    # ret = []
+    ret = predictions
     # if if_quantized:  # mu-law transformation
     #     # recover int waveform to float waveform
     #     # Greedy Sampling
@@ -122,7 +122,7 @@ def generate_and_save_waves(model, epoch, test_sample, level=0, if_decode=False,
         librosa.display.waveplot(waves.squeeze(), sr=SAMPLE_RATE)
         plt.title(f"WavePlot - {IDX_TO_GENRES[i]}")
         # plt.tight_layout()
-        ret.append(predictions[i])
+        # ret.append(predictions[i])
 
     plt.show()
 

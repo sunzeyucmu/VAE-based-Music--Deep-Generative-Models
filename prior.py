@@ -126,7 +126,7 @@ class Prior(keras.Model):
         self.z_shapes = z_shapes
         self.levels = len(z_shapes)
         self.z_shape = z_shapes[level]
-        self.context_length = tf.reduce_prod(self.z_shape) # (T, 1) -> T
+        self.context_length = tf.reduce_prod(self.z_shape)  # (T, 1) -> T
         self.bins = bins
         self.genre_bins = genre_classes
 
@@ -238,8 +238,9 @@ class Prior(keras.Model):
         return pred_logits, target, attn_weights, loss, acc
 
     @tf.function
-    def train_step(self, x):
+    def train_step(self, x, teacher_force_rate=0.2):
         """
+        :param teacher_force_rate:
         :param x: tuple of (N, T, 1) the raw audio waveform!
         :return:
         """
@@ -274,8 +275,24 @@ class Prior(keras.Model):
                 assert self.label_conditioner is not None
                 y_cond = self.label_conditioner(y, training=True)
 
-            pred_logits, attn_weights = self.prior(latent_input, x_cond=latent_codes_upper, training=True,
+            # Teacher Forcing
+            forward_logits, _ = self.prior(latent_input, x_cond=latent_codes_upper, training=True,
+                                           y_cond=y_cond)
+
+            # TODO: Take Sampled Value?
+            pred_latent = tf.argmax(forward_logits, axis=2)  # (N, T)
+            pred_latent = tf.pad(pred_latent[:, :-1], paddings=[[0, 0], [1, 0]], mode='CONSTANT',
+                                 constant_values=self.bins - 1)
+            print(f"[DEBUG] Apply Teacher Forcing with tf_rate: {teacher_force_rate}")
+            idx = tf.random.uniform(tf.shape(pred_latent), minval=0, maxval=1, dtype=tf.float32) < teacher_force_rate
+
+            batch_input = tf.where(idx, pred_latent,
+                                   latent_input)  # (take model output as input for next step randomly)
+            pred_logits, attn_weights = self.prior(batch_input, x_cond=latent_codes_upper, training=True,
                                                    y_cond=y_cond)
+
+            # pred_logits, attn_weights = self.prior(latent_input, x_cond=latent_codes_upper, training=True,
+            #                                        y_cond=y_cond)
 
             loss = loss_function(target, pred_logits, loss_fn=self.ent_loss_fn)  # loss per token
 
@@ -293,7 +310,8 @@ class Prior(keras.Model):
             with self.train_monitor.summary_writer.as_default():
                 # Log the weights and gradients
                 for var, grad in zip(variables, gradients):
-                    tf.summary.histogram(name=f"[grad]{var.name}", data=grad, step=tf.summary.experimental.get_step()) #, step=self.iters) #step=self.train_monitor.step)
+                    tf.summary.histogram(name=f"[grad]{var.name}", data=grad,
+                                         step=tf.summary.experimental.get_step())  # , step=self.iters) #step=self.train_monitor.step)
                     tf.summary.histogram(name=var.name, data=var,
                                          step=tf.summary.experimental.get_step())  # , step=self.iters) #step=self.train_monitor.step)
 
@@ -367,7 +385,8 @@ class Prior(keras.Model):
 
         if z_cond is not None:
             tf.debugging.assert_equal(
-                tf_utils.shape_list(z_cond)[0], n_samples, message=f"Batch Size not matching, Expected:{n_samples}, Getting: {tf_utils.shape_list(z_cond)[0]}",
+                tf_utils.shape_list(z_cond)[0], n_samples,
+                message=f"Batch Size not matching, Expected:{n_samples}, Getting: {tf_utils.shape_list(z_cond)[0]}",
                 summarize=None, name=None
             )
             # TODO: move z_cond up_sampling to this prior layer
@@ -375,7 +394,8 @@ class Prior(keras.Model):
         y_cond = None
         if y is not None:
             tf.debugging.assert_equal(
-                tf_utils.shape_list(y)[0], n_samples, message=f"Batch Size not matching, Expected:{n_samples}, Getting: {tf_utils.shape_list(y)[0]}",
+                tf_utils.shape_list(y)[0], n_samples,
+                message=f"Batch Size not matching, Expected:{n_samples}, Getting: {tf_utils.shape_list(y)[0]}",
                 summarize=None, name=None
             )
             print(f"[DEBUG] Labels to Initiate the Sampling: {y}")

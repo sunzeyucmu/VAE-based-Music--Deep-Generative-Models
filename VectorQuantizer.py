@@ -65,6 +65,7 @@ class VectorQuantizer(layers.Layer):
 
     @property
     def metrics(self):
+        # TODO: track this during validation/testing
         return [
             self.batch_usage_tracker,
             self.usage_tracker,
@@ -92,6 +93,7 @@ class VectorQuantizer(layers.Layer):
         # about adding losses to different layers here:
         # https://keras.io/guides/making_new_layers_and_models_via_subclassing/. Check
         # the original paper to get a handle on the formulation of the loss function.
+        # Train the Encoder to commit to the Embeddings
         commitment_loss = self.beta * tf.reduce_mean(
             (tf.stop_gradient(quantized) - x) ** 2
         )

@@ -44,7 +44,8 @@ class VQVAE(keras.models.Model):
 
         # self.vq = VectorQuantizer(num_embeddings, latent_dim, name="vector_quantizer")
         # Bottlenecks: separate for each level
-        self.vqs = [VectorQuantizer(num_embeddings, latent_dim, level=level, name="vector_quantizer_{}".format(level)) for level in
+        self.vqs = [VectorQuantizer(num_embeddings, latent_dim, level=level, name="vector_quantizer_{}".format(level))
+                    for level in
                     range(levels)]
         # self.encoder = Encoder(output_dim=latent_dim, residual_width=residual_width,
         #                        residual_depth=residual_depth,
@@ -84,7 +85,8 @@ class VQVAE(keras.models.Model):
         self.level_loss_trackers = [keras.metrics.Mean(name="[{}]level_loss".format(level)) for level in range(levels)]
         self.recon_loss_trackers = [keras.metrics.Mean(name="[{}]recon_loss".format(level)) for level in range(levels)]
         self.vq_loss_trackers = [keras.metrics.Mean(name="[{}]vq_loss".format(level)) for level in range(levels)]
-        self.spectral_loss_trackers = [keras.metrics.Mean(name="[{}]spectral_loss".format(level)) for level in range(levels)]
+        self.spectral_loss_trackers = [keras.metrics.Mean(name="[{}]spectral_loss".format(level)) for level in
+                                       range(levels)]
         # Loss Func for reconstruction
         self.loss_fn = keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
 
@@ -116,7 +118,7 @@ class VQVAE(keras.models.Model):
         total_loss = tf.zeros(())
         with tf.GradientTape() as tape:
             # Outputs from the VQ-VAE.
-            for level in range(self.levels): # bottom to top
+            for level in range(self.levels):  # bottom to top
                 reconstructions = self.vqvaes[level](x)
 
                 # Calculate the losses.
@@ -173,10 +175,35 @@ class VQVAE(keras.models.Model):
       For CallBack model call
     '''
 
-    def call(self, x):
-        # take the bottom level result... for now...
-        # return self.vqvae(x)
-        return self.vqvaes[0](x)
+    def call(self, x, training=False):
+        if isinstance(x, tuple):
+            x, _ = x
+
+        commit_losses = []
+        recon_losses = []
+        spectral_losses = []
+        level_losses = []
+        recons = []
+        # Outputs from the VQ-VAE.
+        for level in range(self.levels):  # bottom to top
+            reconstructions = self.vqvaes[level](x, training=training)
+            recons.append(reconstructions)
+
+            # Calculate the losses.
+            reconstruction_loss = tf.reduce_mean(self.loss_fn(x, reconstructions))
+            # Spectral Loss
+            spectral_loss = tf.reduce_mean(self._multispectral_loss(x, reconstructions))
+            # commitment loss
+            commit_loss = sum(self.vqvaes[level].losses)
+
+            level_loss = reconstruction_loss + commit_loss + spectral_loss
+            commit_losses.append(commit_loss)
+            recon_losses.append(reconstruction_loss)
+            spectral_losses.append(spectral_loss)
+            level_losses.append(level_loss)
+
+        return recons, {"level_losses": level_losses, "recon_losses": recon_losses, "commit_losses": commit_losses,
+                        "spec_losses": spectral_losses}
 
     def encode_level(self, x, level, chunk=1):
         # ze: (N, T_downsampled, C)
@@ -231,7 +258,6 @@ class VQVAE(keras.models.Model):
         :return:
         """
         return self.decode_level(zq, level)
-
 
     def update_metrics(self, level_losses, recon_losses, commit_losses, spectral_losses):
         # Loss tracking.
@@ -323,7 +349,8 @@ if __name__ == '__main__':
 
     # Stack of VQ-VAE
     # vqvae = VQVAE(sample_batch.shape[1:], levels=1, latent_dim=64, num_embeddings=512, down_depth=[5], strides=[2], dilation_factor=3)
-    vqvae = VQVAE(sample_batch.shape[1:], levels=2, latent_dim=64, num_embeddings=512, down_depth=[5, 3], strides=[2, 2], dilation_factor=3, residual_width=32)
+    vqvae = VQVAE(sample_batch.shape[1:], levels=2, latent_dim=64, num_embeddings=512, down_depth=[5, 3],
+                  strides=[2, 2], dilation_factor=3, residual_width=32)
 
     for l, model, enc, dec, vq in zip(range(vqvae.levels), vqvae.vqvaes, vqvae.encoders, vqvae.decoders, vqvae.vqs):
         print("======================VQ-VAE: {}============================".format(l))
@@ -334,4 +361,3 @@ if __name__ == '__main__':
 
     vqvae.compile(optimizer=keras.optimizers.Adam())
     vqvae.fit(x=sample_batch, y=sample_y, batch_size=8, epochs=4)
-
